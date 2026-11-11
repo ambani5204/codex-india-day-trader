@@ -1,0 +1,21 @@
+# Persistent dashboard, loopback-only exposure: put authenticated TLS proxy in front.
+services:
+  dashboard:
+    build: .
+    restart: unless-stopped
+    command: ["python", "tools/india.py", "dashboard", "--mode", "upstox", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./trader:/app/trader
+    environment:
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME:?set in local .env}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:?set in local .env}
+  paper_worker:
+    build: .
+    profiles: ["paper"]
+    command: ["python", "tools/india.py", "paper-upstox", "--market", "NIFTY"]
+    volumes:
+      - ./trader:/app/trader
+    environment:
+      UPSTOX_ACCESS_TOKEN: ${UPSTOX_ACCESS_TOKEN:-}

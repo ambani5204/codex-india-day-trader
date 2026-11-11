@@ -1,11 +1,15 @@
-# Secrets and generated market/trade data
-.env
-.env.*
-!.env.example
 __pycache__/
 *.pyc
+.env
+.venv/
+trader/config.json
+trader/instruments.csv
 trader/*.json
 trader/*.jsonl
+trader/paper_forward/
 !trader/config.example.json
-*.db
-*.sqlite*
+trader/paper_upstox/
+trader/demo_forward/
+trader/upstox_instruments.json
+local.env
+.env.*
