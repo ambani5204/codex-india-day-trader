@@ -1,10 +1,24 @@
 # Codex Day Trader — India edition (NIFTY / SENSEX / Upstox / Zerodha / Android)
 
-**Status: 29 offline tests passed, including the mock Upstox forward-paper workflow. Synthetic Android dashboard is runnable without an account. Upstox/Zerodha live-read connectivity is implemented but NOT yet verified using real credentials or exchange quotes. Cloud deployment is provided as a self-hosted configuration, not deployed here. NO live order execution.**
+**Status: read-only market-data/paper simulation. The original offline suite passed previously; newly added SQLite/server code includes offline tests but has NOT been verified with a live Upstox account or deployed on a VPS. NO live order execution.**
 
 This project adapts the 11 skill *roles* from [Jakeschincariol/day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill) for **OpenAI Codex** in `.agents/skills/`. It is not the original repo's code ported line-for-line. For the original upstream Claude skill files and Python scripts, see [Import original files](#import-original-upstream-files-optional).
 
 It is intended for **educational analysis** and controlled manual/paper workflows, not guaranteed profitability. Historical tests have lookahead and selection-bias risk unless verified against accurate, timestamped, independently collected market data.
+
+## Persistent daily/monthly results and always-on hosting
+
+The Upstox Android dashboard archives paper sessions to durable **SQLite** at `trader/paper.sqlite3`; full quote/event journals remain on disk in `trader/paper_upstox/`. **Closing Termux does not delete files** unless app data/storage is removed.
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+python tools/india.py db-sync
+python tools/india.py db-report --period day
+python tools/india.py db-report --period month
+```
+
+For **automatic 09:15 weekday starts**, run on an always-on Linux VPS, not a phone. The complete one-time setup is in **[deploy/README.md](deploy/README.md)** with `bash deploy/install_server.sh`, systemd background services and private Tailscale HTTPS access from Android. An Upstox Analytics Token is read-only and valid for **one year** (not daily), unless revoked. No VPS or remote dashboard has been deployed by this repository update. This is still unverified against live Upstox market data.
 
 ## NEW — Upstox + Android mobile dashboard (2026-11-11)
 
