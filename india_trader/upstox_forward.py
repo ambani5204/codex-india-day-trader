@@ -23,9 +23,10 @@ def _events(path):
     return events
 
 
-def _daily_risk(directory, day, settings):
+def _daily_risk(directory, day, settings, market=None):
     closed=[]
-    for file in Path(directory).glob(day.isoformat()+'_*.jsonl'):
+    pattern=day.isoformat()+'_'+(market+'_' if market else '')+'*.jsonl'
+    for file in Path(directory).glob(pattern):
         events=_events(file)
         if any(e.get('event')=='PAPER_BUY_FILLED' for e in events) and not any(e.get('event')=='PAPER_TRADE_CLOSED' for e in events):
             raise UpstoxError(f'Unresolved position: {file}. Review before another session')
@@ -54,7 +55,7 @@ def run_upstox(args,settings,reader=None,clock=None,sleep=None):
     cache=args.master
     records=load_today_master(cache,day)
     directory=Path(args.directory)
-    _daily_risk(directory,day,settings)
+    _daily_risk(directory,day,settings,market=args.market if settings.get('_paper_market_partitions',1)==2 else None)
     # Fail closed after existing session on this trading day: no duplicate signal.
     prior=list(directory.glob(day.isoformat()+'_'+args.market+'_*.jsonl'))
     if prior:raise UpstoxError('A '+args.market+' forward-paper session already exists today; inspect previous journal before restarting')
@@ -68,6 +69,7 @@ def run_upstox(args,settings,reader=None,clock=None,sleep=None):
         journal_write(path,{**base,**evt})
     write({'event':'SESSION_START','timestamp':now.isoformat(),'capital':settings['capital_inr'],
            'max_loss_per_trade':settings['max_loss_per_trade_inr'],
+           'market_partitions':settings.get('_paper_market_partitions',1),
            'slippage_bps':args.slippage_bps,'latency_ms':args.latency_ms,
            'warning':'Simulated fills only; no exchange order; daily Upstox OAuth renewal required'})
     engine=None
