@@ -21,10 +21,15 @@ data['allow_live_orders'] = False
 Path('trader/config.json').write_text(json.dumps(data, indent=2) + '\n')
 PY
 
-read -r -p "Market [BOTH/NIFTY/SENSEX] (default BOTH): " market
-market="${market:-BOTH}"
+read -r -p "Market [AUTO/BOTH/NIFTY/SENSEX] (default AUTO): " market
+market="${market:-AUTO}"
 market="${market^^}"
-case "$market" in BOTH|NIFTY|SENSEX) ;; *) echo "Choose BOTH, NIFTY or SENSEX."; exit 1;; esac
+case "$market" in AUTO|BOTH|NIFTY|SENSEX) ;; *) echo "Choose AUTO, BOTH, NIFTY or SENSEX."; exit 1;; esac
+if [ "$market" = "AUTO" ]; then
+  market="$(python -c 'from datetime import datetime; from zoneinfo import ZoneInfo; from india_trader.schedule import market_for_day; print(market_for_day(datetime.now(ZoneInfo("Asia/Kolkata")).date()) or "")')"
+  if [ -z "$market" ]; then echo "No weekday session today."; exit 1; fi
+  echo "Today's scheduled market: $market"
+fi
 
 if ! python - <<'PY'
 from datetime import datetime,time
@@ -62,7 +67,7 @@ cleanup() {
 }
 trap cleanup EXIT
 for item in "${markets[@]}"; do
-  python tools/india.py paper-upstox --market "$item" --lots 1 --fee-profile UPSTOX > "trader/upstox_${item,,}.log" 2>&1 &
+  python tools/india.py paper-upstox --market "$item" --lots 1 --selector delta --delta-min 0.40 --delta-max 0.65 --target-delta 0.50 --fee-profile UPSTOX > "trader/upstox_${item,,}.log" 2>&1 &
   workers+=("$!")
 done
 sleep 2
