@@ -30,6 +30,32 @@ On the **same device**, open `http://127.0.0.1:8080` in Chrome. The demo shows b
 
 This is a *local* demo; Android can suspend Termux when the phone sleeps. It is **not** an always-on cloud service and does not fetch live market data without an Upstox account.
 
+### Android AUTO: weekday market and option contract selection
+
+The default Android launcher now chooses the paper market automatically:
+
+| Day | Paper market | Regular weekly expiry |
+| --- | --- | --- |
+| Monday | NIFTY | Tuesday |
+| Tuesday | NIFTY | Tuesday |
+| Wednesday | SENSEX | Thursday |
+| Thursday | SENSEX | Thursday |
+| Friday | NIFTY | Following Tuesday |
+
+This is a **fixed user-requested schedule**, not proof of higher returns. Holidays are not yet checked automatically. Daily start remains manual.
+
+Run in Termux:
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+bash live-paper-android.sh
+```
+
+Press **Enter** for AUTO, then provide a new Upstox token **in Termux only**. The worker checks for a newly confirmed index ORB, requests the current Upstox option chain and selects a real contract with absolute delta **0.40–0.65**, targeting **0.50**. Entry also requires a quoted premium within virtual capital and risk budgets, a narrow bid/ask spread and enough visible depth. Missing Greeks/market depth or a rejected limit means **NO TRADE**, not a made-up fill. The mobile session card displays the selected strike, expiry, delta and ask premium.
+
+**Expiry safety:** This simulator intentionally avoids **same-day expiry** contracts. On Tuesday it selects an eligible later NIFTY expiry; on Thursday a later SENSEX expiry. Exercise/settlement and expiry-specific closing auction risks are not implemented. Upstox access/Greeks are not verified with a live account and snapshots do not guarantee executions.
+
 ### Android: NIFTY and SENSEX together (manual daily start)
 
 After installing Python and cloning this project in Termux:
