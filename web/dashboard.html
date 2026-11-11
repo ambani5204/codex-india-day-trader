@@ -29,12 +29,19 @@ main{max-width:980px;padding-top:20px}header{margin-bottom:18px}
 .metric{border-color:var(--border);padding:10px 0}.session{border-radius:10px}.session .state{color:#53745e}
 .trade-table td,.trade-table th{border-color:var(--border)}.footer{color:var(--muted);font-size:11px}.chart-empty{color:var(--muted)}
 @media(max-width:740px){main{padding:15px 13px 60px}.hero{flex-direction:row;gap:8px}.hero h1{font-size:17px}.hero .right{align-self:center;text-align:right;white-space:nowrap}.stat{padding:13px}.stat .value{font-size:22px}.cols{gap:10px}.brand{font-size:17px}}
+.period-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:13px}
+.period-stats[hidden]{display:none}.period-stats .value{font-size:22px}
+@media(max-width:740px){.period-stats .value{font-size:20px}}
 </style>
 </head>
 <body><main>
 <header><div class="logo"><div class="logo-mark">↗</div><div><div class="brand">Paper Trader</div><div class="subtitle">NIFTY · SENSEX</div></div></div><div id="mode" class="pill demo">Demo</div></header>
 <section class="hero"><div><h1>Trading overview</h1><p>Net results after estimated charges</p></div><div class="right"><div class="small">Updated</div><strong id="updated">—</strong></div></section>
 <div id="notice" class="notice">Loading…</div>
+<section class="period-stats" id="periodStats" hidden>
+<div class="stat"><div class="title">Today · net P&L</div><div class="value" id="dayPnl">—</div><div class="small" id="dayCount">0 trades</div></div>
+<div class="stat"><div class="title">This month · net P&L</div><div class="value" id="monthPnl">—</div><div class="small" id="monthCount">0 trades</div></div>
+</section>
 <section class="stats" aria-label="Simulation performance">
 <div class="stat"><div class="title">Net P&L</div><div class="value" id="net">—</div></div>
 <div class="stat"><div class="title">Gross P&L</div><div class="value" id="gross">—</div></div>
@@ -61,6 +68,11 @@ function graph(series){const root=$('chart');root.replaceChildren();if(!series.l
  const pts=xy.map(([x,y])=>`${x},${y}`).join(' ');let line=document.createElementNS(svg.namespaceURI,'polyline');line.setAttribute('points',pts);line.setAttribute('fill','none');line.setAttribute('stroke',vals.at(-1)>=0?'#24805b':'#c34747');line.setAttribute('stroke-width','3');line.setAttribute('stroke-linecap','round');line.setAttribute('stroke-linejoin','round');svg.append(line);xy.forEach(([x,y])=>{const dot=document.createElementNS(svg.namespaceURI,'circle');dot.setAttribute('cx',x);dot.setAttribute('cy',y);dot.setAttribute('r','3');dot.setAttribute('fill','#eef5f1');svg.append(dot)});root.append(svg)
 }
 async function refresh(){try{const resp=await fetch('/api/status',{cache:'no-store'});if(!resp.ok)throw Error('API returned '+resp.status);const x=await resp.json(),r=x.report;
+const periods=$('periodStats');periods.hidden=!x.period_stats;
+if(x.period_stats){const d=x.period_stats.today,m=x.period_stats.month;
+set('dayPnl',money(d.net_pnl));set('dayCount',d.trades+' trade'+(d.trades===1?'':'s'));
+set('monthPnl',money(m.net_pnl));set('monthCount',m.trades+' trade'+(m.trades===1?'':'s'));
+signed($('dayPnl'),d.net_pnl);signed($('monthPnl'),m.net_pnl);}
 $('mode').textContent=x.is_demo?'Demo':'Upstox paper';$('mode').className='pill '+(x.is_demo?'demo':'');set('updated',new Date(x.updated_at).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'} )+' IST');set('notice',x.is_demo?'Sample prices — not live market data':(x.latest_quote && x.latest_quote.captured_at && (Date.now()-Date.parse(x.latest_quote.captured_at)<30000)?'Upstox data · simulated trades only':'No fresh Upstox quote · paper mode'));set('net',money(r.net_trading_pnl_after_fees));signed($('net'),r.net_trading_pnl_after_fees);set('gross',money(r.gross_trading_pnl_before_fees));signed($('gross'),r.gross_trading_pnl_before_fees);set('fees',money(r.fees_and_taxes));set('winrate',r.win_rate_pct===null?'—':r.win_rate_pct+'%');set('tradecount',r.closed_trades+' closed trade'+(r.closed_trades===1?'':'s'));set('drawdown',money(r.max_closed_trade_drawdown));set('avg',r.average_net_trade===null?'—':money(r.average_net_trade));set('pf',r.profit_factor===null?'—':r.profit_factor);set('open',r.open_unresolved_sessions);set('afterfixed',money(r.estimated_net_after_fixed_cost));set('quote',x.latest_quote?x.latest_quote.market+' · '+money(x.latest_quote.bid)+' / '+money(x.latest_quote.ask):'No live quote');graph(x.series);
  const table=$('trades');table.replaceChildren();if(!x.trades.length){let tr=table.insertRow(),td=tr.insertCell();td.colSpan=6;td.textContent='No trades recorded'}for(const t of x.trades){let tr=table.insertRow();const vals=[t.market+' · '+t.symbol,money(t.buy),money(t.sell),t.quantity,money(t.charges),money(t.net)];for(let i=0;i<vals.length;i++){let td=tr.insertCell();td.textContent=vals[i];if(i===5)signed(td,t.net)}}
  const fees=$('feeBreakdown');fees.replaceChildren();const defs=[['brokerage','Brokerage'],['stt','STT'],['exchange_transaction_charge','Exchange transaction'],['gst','GST'],['stamp_duty','Stamp duty'],['sebi','SEBI'],['ipft','IPFT']];for(const [k,v] of defs)row(fees,v,money(x.fees_breakdown[k]||0));
