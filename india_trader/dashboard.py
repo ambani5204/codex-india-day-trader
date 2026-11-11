@@ -86,7 +86,15 @@ def dashboard_payload(folder='trader/demo_forward', mode='demo', monthly_cost=0)
         from .storage import sync_journals,period_report
         sync_journals(folder)
         period_stats={'today':period_report('day'),'month':period_report('month')}
-    return {'period_stats':period_stats,'mode':mode.upper(),'is_demo':mode=='demo','source':str(folder),
+    scheduler=None
+    if mode=='upstox':
+        try:
+            status_path=Path('trader/termux_scheduler_status.json')
+            if status_path.exists():
+                scheduler=json.loads(status_path.read_text(encoding='utf-8'))
+        except (OSError,ValueError,TypeError):
+            scheduler=None
+    return {'scheduler':scheduler,'period_stats':period_stats,'mode':mode.upper(),'is_demo':mode=='demo','source':str(folder),
             'updated_at':dt.datetime.now(IST).isoformat(),
             'report':report,'series':series,'sessions':s[:25], 'trades':list(reversed(t[-40:])),
             'fees_breakdown':fees,'latest_quote':q,
