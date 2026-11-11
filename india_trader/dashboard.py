@@ -38,6 +38,16 @@ def read_journals(folder):
                  'last_event':data[-1].get('event','UNKNOWN'),
                  'unresolved':any(e.get('event')=='PAPER_BUY_FILLED' for e in data) and not any(e.get('event')=='PAPER_TRADE_CLOSED' for e in data),
                  'last_update':data[-1].get('timestamp')}
+        signal=next((e for e in reversed(data) if e.get('event')=='INDEX_SIGNAL'),None)
+        if signal and isinstance(signal.get('contract'),dict):
+            choice=signal['contract']
+            session['contract_selection']={
+                'expiry':choice.get('expiry'),'strike':choice.get('strike'),
+                'type':choice.get('option_type'),'delta':choice.get('delta'),
+                'iv':choice.get('iv'),'theta':choice.get('theta'),
+                'quoted_ask':choice.get('quoted_ask'),
+                'selection':choice.get('selection'),
+                'estimated_stop_loss':choice.get('estimated_stop_loss_including_charges')}
         sessions.append(session)
         quotes=[e for e in data if e.get('event')=='QUOTE_SNAPSHOT']
         if quotes:
