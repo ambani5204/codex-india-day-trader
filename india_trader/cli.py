@@ -28,6 +28,19 @@ def config():
     p=Path('trader/config.json')
     return read_json(p if p.exists() else 'trader/config.example.json')
 
+def paper_settings_partitioned(settings, partitions=1):
+    """Isolate paper capital/risk for independent simultaneous market workers."""
+    partitions=int(partitions)
+    if partitions not in (1,2):
+        raise ValueError('PAPER_MARKET_PARTITIONS must be 1 or 2')
+    c=dict(settings)
+    if partitions==2:
+        for key in ('capital_inr','max_loss_per_trade_inr','max_daily_loss_inr'):
+            c[key]=float(c[key])/2
+        c['max_trades_per_day']=max(1,int(c['max_trades_per_day'])//2)
+    c['_paper_market_partitions']=partitions
+    return c
+
 def dump(result): print(json.dumps(result,indent=2,ensure_ascii=False))
 
 def bars_for(args):
@@ -140,6 +153,7 @@ def dispatch(a):
     cfg=config()
     if a.cmd=='paper-upstox':
         from .upstox_forward import run_upstox
+        cfg=paper_settings_partitioned(cfg,os.environ.get('PAPER_MARKET_PARTITIONS','1'))
         return run_upstox(a,cfg)
     if a.cmd=='paper-cost':
         fees=option_fees(a.buy,a.sell,a.qty,a.exchange,a.fee_profile)
