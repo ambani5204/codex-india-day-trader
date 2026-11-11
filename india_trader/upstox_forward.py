@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from .core import IST, orb_signal, parse_time
 from .paper_sim import PaperEngine, journal_write
-from .upstox import INDICES, UpstoxReader, UpstoxError, load_today_master, select_atm
+from .upstox import INDICES, UpstoxReader, UpstoxError, load_today_master, select_atm, select_delta_contract
 
 
 def _events(path):
@@ -102,7 +102,30 @@ def run_upstox(args,settings,reader=None,clock=None,sleep=None):
                                'trigger_time':orb['trigger_time'],'age_seconds':round(age,2),
                                'reason':'SIGNAL_TOO_OLD_NO_BACKFILL'})
                         break
-                    contract=select_atm(records,args.market,orb['side'],float(orb['entry_price']),day)
+                    selector=getattr(args,'selector','atm')
+                    if selector=='delta':
+                        nearest=select_atm(records,args.market,orb['side'],float(orb['entry_price']),day)
+                        chain=api.option_chain(INDICES[args.market],nearest['expiry'])
+                        try:
+                            contract=select_delta_contract(
+                                records,chain,args.market,orb['side'],float(orb['entry_price']),
+                                day,settings,lots=args.lots,stop_pct=args.stop_pct,
+                                max_spread_pct=args.max_spread_pct,fee_profile=args.fee_profile,
+                                delta_min=getattr(args,'delta_min',0.40),
+                                delta_max=getattr(args,'delta_max',0.65),
+                                target_delta=getattr(args,'target_delta',0.50))
+                        except UpstoxError as exc:
+                            write({'event':'CONTRACT_FILTER_BLOCKED','timestamp':clock().astimezone(IST).isoformat(),
+                                   'reason':str(exc),'selector':'delta'})
+                            break
+                    else:
+                        contract=select_atm(records,args.market,orb['side'],float(orb['entry_price']),day)
+                    # Reject if selecting the option chain took too long after the index signal.
+                    if (clock().astimezone(IST)-parse_time(orb['trigger_time'])).total_seconds()>args.max_signal_age_seconds:
+                        seen_old=True
+                        write({'event':'MISSED_SIGNAL','timestamp':clock().astimezone(IST).isoformat(),
+                               'reason':'SIGNAL_STALE_AFTER_CHAIN_LOOKUP'})
+                        break
                     qty=int(contract['lot_size'])*int(args.lots)
                     # No unknown-margin or price index sizing; PaperEngine checks premium and max stop loss.
                     engine=PaperEngine(contract['symbol'],qty,settings['capital_inr'],
