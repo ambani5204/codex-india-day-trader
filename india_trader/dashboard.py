@@ -81,7 +81,12 @@ def dashboard_payload(folder='trader/demo_forward', mode='demo', monthly_cost=0)
     for trade in t:
         cumulative=money(cumulative+float(trade['net']))
         series.append({'date':trade['closed_at'],'net':cumulative})
-    return {'mode':mode.upper(),'is_demo':mode=='demo','source':str(folder),
+    period_stats=None
+    if mode=='upstox':
+        from .storage import sync_journals,period_report
+        sync_journals(folder)
+        period_stats={'today':period_report('day'),'month':period_report('month')}
+    return {'period_stats':period_stats,'mode':mode.upper(),'is_demo':mode=='demo','source':str(folder),
             'updated_at':dt.datetime.now(IST).isoformat(),
             'report':report,'series':series,'sessions':s[:25], 'trades':list(reversed(t[-40:])),
             'fees_breakdown':fees,'latest_quote':q,
