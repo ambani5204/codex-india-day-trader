@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from .core import IST
 
@@ -54,7 +55,7 @@ def sync_journals(directory=DEFAULT_JOURNALS, database=DEFAULT_DB):
     """Import only complete new JSONL lines. Repeated calls never double-count."""
     folder=Path(directory)
     totals={'journals':0,'events':0,'trades':0,'database':str(database)}
-    with _connect(database) as db:
+    with closing(_connect(database)) as db, db:
         if not folder.exists():
             return totals
         for path in sorted(folder.glob('*.jsonl')):
