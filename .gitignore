@@ -1,0 +1,11 @@
+# Secrets and generated market/trade data
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+trader/*.json
+trader/*.jsonl
+!trader/config.example.json
+*.db
+*.sqlite*
