@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # Phone-only forward paper trading. No broker order placement.
+# By default, start the overnight/anytime scheduler.
+# Use --once only for legacy manual single-day market selection.
+if [ "${1:-}" != "--once" ]; then
+  exec bash "$(dirname "$0")/start-anytime.sh"
+fi
 set -euo pipefail
 cd "$(dirname "$0")"
 
