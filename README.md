@@ -6,6 +6,29 @@ This project adapts the 11 skill *roles* from [Jakeschincariol/day-trader-skill]
 
 It is intended for **educational analysis** and controlled manual/paper workflows, not guaranteed profitability. Historical tests have lookahead and selection-bias risk unless verified against accurate, timestamped, independently collected market data.
 
+## Android overnight start (no VPS required)
+
+**Start at any time** — night, morning, or during market hours. In Termux:
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+bash start-anytime.sh
+```
+
+Enter a **new private** Upstox Analytics Token **once** in Termux (input is hidden).
+The launcher verifies read-only market-data access before waiting, requests an Android CPU wake lock, starts the local read-only dashboard at `http://127.0.0.1:8080`, and stays running until you stop it. It does not store your token in the database.
+
+* Start **before 09:15 IST**: waits for the next weekday at 09:15.
+* Start **09:15–15:10 IST**: begins that day's market session now. The strategy can consider only fresh, confirmed signals; **no missed signals or fills are invented**.
+* Start **after 15:10 IST** or on a weekend: waits until the next market weekday at 09:15.
+* Weekday plan: Mon/Tue/Fri NIFTY; Wed/Thu SENSEX. **Exchange holidays not yet checked**.
+* The first potential ORB entry is **after 09:35**, not at 09:20. On completion, the process remains running and waits for the next trading weekday automatically. Results are saved incrementally to `trader/paper.sqlite3` and detailed journals stay in `trader/paper_upstox/`.
+* **Important**: Turn on Android Settings → Apps → Termux → Battery → Unrestricted, leave Termux active, keep the phone charged, connected to the internet, and do not reboot/force-stop. Android may still kill background apps or suspend network access; **an overnight start is best-effort, not guaranteed**. Use a VPS for reliable unattended operation.
+* No actual trades or broker orders are submitted.
+
+Check the local dashboard for **Waiting for NIFTY/SENSEX** before sleeping. Stop with **CTRL+C** in Termux. If it gets killed, start the command again; duplicate same-day paper sessions are blocked.
+
 ## Persistent daily/monthly results and always-on hosting
 
 The Upstox Android dashboard archives paper sessions to durable **SQLite** at `trader/paper.sqlite3`; full quote/event journals remain on disk in `trader/paper_upstox/`. **Closing Termux does not delete files** unless app data/storage is removed.
