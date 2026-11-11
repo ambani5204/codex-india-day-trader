@@ -77,7 +77,23 @@ def command(*args, log=None):
     argv = [sys.executable, str(ROOT / 'tools' / 'india.py'), *args]
     if log:
         with open(log, 'a', encoding='utf-8') as output:
-            return subprocess.run(argv, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT).returncode
+            worker = subprocess.Popen(argv, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT)
+            try:
+                while worker.poll() is None:
+                    # Heartbeat and incremental SQLite import while market data arrives.
+                    write_status('RUNNING', market=args[2] if len(args)>2 and args[1]=='--market' else '',
+                                 message='Upstox paper-trading worker running')
+                    sync_journals(LOG_DIR / 'paper_upstox', LOG_DIR / 'paper.sqlite3')
+                    time.sleep(20)
+                return worker.returncode
+            finally:
+                if worker.poll() is None:
+                    worker.terminate()
+                    try:
+                        worker.wait(timeout=8)
+                    except subprocess.TimeoutExpired:
+                        worker.kill()
+                        worker.wait()
     return subprocess.run(argv, cwd=ROOT).returncode
 
 
@@ -121,6 +137,7 @@ def main():
         return 1
     attempted = None
     previous_wait = None
+    last_heartbeat = None
     print('Overnight scheduler active. Start time: 09:15 IST on weekdays.', flush=True)
     try:
         while True:
@@ -130,9 +147,11 @@ def main():
                 label = (start.isoformat(), market)
                 if label != previous_wait:
                     print(f'Waiting for {market} — {start:%a %d %b %I:%M %p} IST', flush=True)
+                    previous_wait = label
+                if last_heartbeat is None or (now-last_heartbeat).total_seconds() >= 60:
                     write_status('WAITING', market=market, start=start.isoformat(),
                                  message='Termux must remain running in background')
-                    previous_wait = label
+                    last_heartbeat = now
                 time.sleep(min(20.0, max(1.0, (start-now).total_seconds())))
                 continue
             day = now.date()
