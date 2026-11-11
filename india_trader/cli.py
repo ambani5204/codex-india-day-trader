@@ -106,6 +106,11 @@ def main(argv=None):
     us.add_argument('--out',default='trader/upstox_instruments.json')
     pu=sub.add_parser('paper-upstox',help='Live Upstox V3 REST snapshot paper simulation; never sends orders')
     pu.add_argument('--market',choices=['NIFTY','SENSEX'],required=True)
+    pu.add_argument('--selector',choices=['delta','atm'],default='delta',
+                    help='Delta/premium option-chain filter; ATM only for testing backwards compatibility')
+    pu.add_argument('--delta-min',type=float,default=0.40)
+    pu.add_argument('--delta-max',type=float,default=0.65)
+    pu.add_argument('--target-delta',type=float,default=0.50)
     pu.add_argument('--lots',type=int,default=1)
     pu.add_argument('--master',default='trader/upstox_instruments.json')
     pu.add_argument('--directory',default='trader/paper_upstox')
