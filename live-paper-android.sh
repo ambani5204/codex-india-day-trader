@@ -21,10 +21,10 @@ data['allow_live_orders'] = False
 Path('trader/config.json').write_text(json.dumps(data, indent=2) + '\n')
 PY
 
-read -r -p "Market [NIFTY/SENSEX] (default NIFTY): " market
-market="${market:-NIFTY}"
+read -r -p "Market [BOTH/NIFTY/SENSEX] (default BOTH): " market
+market="${market:-BOTH}"
 market="${market^^}"
-case "$market" in NIFTY|SENSEX) ;; *) echo "Choose NIFTY or SENSEX."; exit 1;; esac
+case "$market" in BOTH|NIFTY|SENSEX) ;; *) echo "Choose BOTH, NIFTY or SENSEX."; exit 1;; esac
 
 if ! python - <<'PY'
 from datetime import datetime,time
@@ -46,15 +46,35 @@ echo "Syncing NIFTY and SENSEX option instruments..."
 python tools/india.py upstox-sync
 
 mkdir -p trader
-python tools/india.py paper-upstox --market "$market" --lots 1 --fee-profile UPSTOX > trader/upstox_worker.log 2>&1 &
-worker=$!
-trap 'kill "$worker" 2>/dev/null || true' EXIT
-sleep 2
-if ! kill -0 "$worker" 2>/dev/null; then
-  echo "Data session did not start. Recent log:"
-  tail -n 12 trader/upstox_worker.log
-  exit 1
+workers=()
+markets=("$market")
+if [ "$market" = "BOTH" ]; then
+  markets=("NIFTY" "SENSEX")
+  export PAPER_MARKET_PARTITIONS=2
+  echo "Virtual capital and loss limits will be split equally between both markets."
+else
+  export PAPER_MARKET_PARTITIONS=1
 fi
+cleanup() {
+  for pid in "${workers[@]}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+}
+trap cleanup EXIT
+for item in "${markets[@]}"; do
+  python tools/india.py paper-upstox --market "$item" --lots 1 --fee-profile UPSTOX > "trader/upstox_${item,,}.log" 2>&1 &
+  workers+=("$!")
+done
+sleep 2
+for i in "${!workers[@]}"; do
+  if ! kill -0 "${workers[$i]}" 2>/dev/null; then
+    echo "Could not start ${markets[$i]} session. Check:"
+    echo "trader/upstox_${markets[$i],,}.log"
+    tail -n 12 "trader/upstox_${markets[$i],,}.log"
+    exit 1
+  fi
+done
 echo "Open Chrome: http://127.0.0.1:8080"
 echo "Market: $market | Paper trades only | No real orders"
+echo "Start once on each market day, ideally 9:15-9:30 IST. Keep Termux open."
 python tools/india.py dashboard --mode upstox --host 127.0.0.1 --port 8080
