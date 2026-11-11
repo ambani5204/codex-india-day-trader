@@ -125,6 +125,13 @@ def main(argv=None):
     pu.add_argument('--max-quote-age-seconds',type=float,default=15)
     pu.add_argument('--max-signal-age-seconds',type=float,default=90)
     pu.add_argument('--max-minutes',type=float,default=390)
+    store=sub.add_parser('db-sync',help='Archive paper journals into durable SQLite database')
+    store.add_argument('--directory',default='trader/paper_upstox')
+    store.add_argument('--database',default='trader/paper.sqlite3')
+    sums=sub.add_parser('db-report',help='Daily or monthly net paper result from SQLite')
+    sums.add_argument('--period',choices=['day','month'],default='day')
+    sums.add_argument('--date',help='YYYY-MM-DD for day, YYYY-MM for month')
+    sums.add_argument('--database',default='trader/paper.sqlite3')
     demo=sub.add_parser('demo-generate',help='Generate EXPLICITLY SYNTHETIC winning and losing paper sessions')
     demo.add_argument('--directory',default='trader/demo_forward')
     dash=sub.add_parser('dashboard',help='Serve mobile paper-only dashboard; demo by default')
@@ -141,6 +148,12 @@ def main(argv=None):
 
 
 def dispatch(a):
+    if a.cmd=='db-sync':
+        from .storage import sync_journals
+        dump(sync_journals(a.directory,a.database));return 0
+    if a.cmd=='db-report':
+        from .storage import period_report
+        dump(period_report(a.period,a.date,a.database));return 0
     if a.cmd=='upstox-sync':
         from .upstox import sync_instruments
         dump(sync_instruments(a.out));return 0
