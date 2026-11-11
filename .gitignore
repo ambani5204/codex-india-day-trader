@@ -13,3 +13,8 @@ trader/demo_forward/
 trader/upstox_instruments.json
 local.env
 .env.*
+trader/*.sqlite3
+trader/*.sqlite3-*
+trader/*.db
+trader/*.db-*
+trader/*.lock
