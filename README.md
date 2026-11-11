@@ -30,6 +30,22 @@ On the **same device**, open `http://127.0.0.1:8080` in Chrome. The demo shows b
 
 This is a *local* demo; Android can suspend Termux when the phone sleeps. It is **not** an always-on cloud service and does not fetch live market data without an Upstox account.
 
+### Android: NIFTY and SENSEX together (manual daily start)
+
+After installing Python and cloning this project in Termux:
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+bash live-paper-android.sh
+```
+
+Choose **BOTH** (press Enter for default) to start two independent workers, or choose NIFTY/SENSEX alone. One current Upstox token is entered **locally, hidden on screen**; do not post it in chat or commit it. For BOTH, the launcher splits configured virtual capital and risk limits equally between the two markets. The dashboard at `http://127.0.0.1:8080` combines the two paper journals. No broker orders are sent.
+
+Run the launcher **each market day around 09:15-09:30 IST**. It does not self-start the next day and cannot reliably keep running while Android suspends Termux. Each market worker stops on a closed paper trade, rejected entry, missed/stale signal, market data error, or the session cutoff (by 15:25 IST); the dashboard remains open until interrupted. It does **not** execute a trade on every day. Standard Upstox access tokens generally expire at 03:30 IST the following morning; renew through official Upstox authentication, subject to the token type and API entitlement. An exchange holiday calendar is not implemented.
+
+This is REST snapshot polling (not tick-by-tick) and has not yet been verified with live account credentials. Simulated net P&L is not guaranteed realizable performance.
+
 ### Live forward PAPER trading when you have Upstox credentials
 
 1. Create an Upstox trading account and developer app if your API entitlement permits; follow the [official OAuth flow](https://upstox.com/developer/api-documentation/authentication/). **Do not send the client secret or access token in chat.**
