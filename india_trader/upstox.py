@@ -92,6 +92,114 @@ def select_atm(records, market, side, spot, today):
             'underlying_spot_at_signal':spot}
 
 
+
+def select_delta_contract(records, chain, market, side, spot, today, settings, lots=1,
+                          stop_pct=15, max_spread_pct=2, fee_profile='UPSTOX',
+                          delta_min=0.40, delta_max=0.65, target_delta=0.50):
+    """Select a real, unexpired option using option-chain Greeks, premium and visible liquidity.
+
+    No delta/quote/depth data -> no candidate. Risk includes estimated exit
+    costs at the hypothetical stop price, and is checked again at live fill.
+    Never select a contract expiring *today*: expiry settlement is not modeled.
+    """
+    from .paper_sim import option_fees
+    if not (0 < delta_min <= target_delta <= delta_max < 1):
+        raise UpstoxError('Invalid delta band; require 0 < min <= target <= max < 1')
+    if int(lots) != lots or lots <= 0 or not 0 < stop_pct < 100 or max_spread_pct <= 0:
+        raise UpstoxError('Invalid lot, stop or spread setting')
+    preferred = select_atm(records, market, side, spot, today)
+    expiry = preferred['expiry']
+    kind = preferred['option_type']
+    segment, exchange = EXCHANGES[market]
+    valid = {}
+    for row in records:
+        if row.get('segment') != segment or row.get('instrument_type') != kind:
+            continue
+        underlying = str(row.get('underlying_symbol', '')).upper()
+        if row.get('underlying_key') != INDICES[market] and not (
+            (market == 'NIFTY' and underlying in {'NIFTY', 'NIFTY 50'}) or
+            (market == 'SENSEX' and underlying == 'SENSEX')
+        ):
+            continue
+        try:
+            if normalize_expiry(row['expiry']).isoformat() != expiry:
+                continue
+            key = str(row['instrument_key'])
+            lot = int(row['lot_size'])
+            if not key or lot <= 0:
+                continue
+            valid[key] = row
+        except (ValueError, TypeError, KeyError, OverflowError):
+            continue
+    if not isinstance(chain, list) or not chain:
+        raise UpstoxError('Upstox option chain missing; delta selection blocked')
+    capital = float(settings['capital_inr'])
+    max_loss = float(settings['max_loss_per_trade_inr'])
+    max_allocation = float(settings['max_allocation_fraction'])
+    candidates = []
+    for strike_row in chain:
+        if not isinstance(strike_row, dict) or strike_row.get('expiry') != expiry:
+            continue
+        entry = strike_row.get('call_options' if kind == 'CE' else 'put_options') or {}
+        key = str(entry.get('instrument_key') or '')
+        if key not in valid:
+            continue
+        greeks = entry.get('option_greeks') or {}
+        market_data = entry.get('market_data') or {}
+        try:
+            raw_delta = float(greeks['delta'])
+            if not (raw_delta > 0 if kind == 'CE' else raw_delta < 0):
+                continue
+            delta = abs(raw_delta)
+            if not delta_min <= delta <= delta_max:
+                continue
+            ask = float(market_data['ask_price'])
+            bid = float(market_data['bid_price'])
+            ask_qty = int(market_data['ask_qty'])
+            bid_qty = int(market_data['bid_qty'])
+            lot_size = int(valid[key]['lot_size'])
+            strike = float(valid[key]['strike_price'])
+            quantity = lot_size * int(lots)
+            if not (0 < bid <= ask and ask_qty >= quantity and bid_qty >= quantity):
+                continue
+            spread = 200 * (ask-bid) / (ask+bid)
+            if spread > max_spread_pct:
+                continue
+            premium_outlay = ask * quantity
+            if premium_outlay > capital * max_allocation:
+                continue
+            stop = max(0.01, ask * (1 - stop_pct / 100))
+            loss = (ask-stop)*quantity + option_fees(ask, stop, quantity, exchange, fee_profile)['total']
+            if loss > max_loss:
+                continue
+            iv = greeks.get('iv')
+            theta = greeks.get('theta')
+            selection = {
+                'instrument_key': key, 'expiry': expiry, 'strike': strike,
+                'lot_size': lot_size, 'market': market, 'exchange': exchange,
+                'option_type': kind,
+                'symbol': f'{exchange}:{market}_{strike:g}_{expiry}_{kind}',
+                'trading_symbol': valid[key].get('trading_symbol', ''),
+                'selection': 'LIVE_CHAIN_DELTA_PREMIUM_LIQUIDITY_RISK',
+                'underlying_spot_at_signal': spot,
+                'delta': raw_delta, 'iv': iv, 'theta': theta,
+                'gamma': greeks.get('gamma'), 'vega': greeks.get('vega'),
+                'quoted_bid': bid, 'quoted_ask': ask, 'quoted_spread_pct': round(spread, 3),
+                'quoted_bid_qty': bid_qty, 'quoted_ask_qty': ask_qty,
+                'premium_outlay_at_ask': round(premium_outlay, 2),
+                'estimated_stop_loss_including_charges': round(loss, 2),
+                'delta_target': target_delta, 'delta_band': [delta_min, delta_max],
+                'expiry_day_trade': False,
+            }
+            rank = (abs(delta-target_delta), abs(strike-spot), spread, premium_outlay, key)
+            candidates.append((rank, selection))
+        except (ValueError, TypeError, KeyError, ZeroDivisionError):
+            continue
+    if not candidates:
+        raise UpstoxError('No contract passed live delta, premium/risk, spread and depth checks; no paper entry')
+    return min(candidates, key=lambda item: item[0])[1]
+
+
 def sync_instruments(path='trader/upstox_instruments.json', today=None):
     result=_json_request(BOD_URL)
     if not isinstance(result,list):raise UpstoxError('Expected Upstox instrument JSON list')
@@ -170,6 +278,13 @@ class UpstoxReader:
             try:bars.append(Bar(parse_time(str(row[0])),*(float(x) for x in row[1:5]),float(row[5])))
             except (IndexError,TypeError,ValueError):continue
         return sorted(bars,key=lambda b:b.time)
+
+    def option_chain(self, index_key, expiry):
+        """Read-only contract chain: premium, quote depth, IV and Greeks."""
+        result=self.get('/v2/option/chain',{'instrument_key':index_key,'expiry_date':expiry})
+        if not isinstance(result,list):
+            raise UpstoxError('Upstox option chain was not a list; selection blocked')
+        return result
 
     def full_quote(self,instrument_key):
         data=self.get('/v3/market-quote/quotes',{'instrument_key':instrument_key})
