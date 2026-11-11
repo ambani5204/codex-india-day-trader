@@ -32,27 +32,87 @@ else
   echo "Warning: wake-lock command unavailable; Android may suspend Termux."
 fi
 
-echo "Use a fresh, private Upstox Analytics Token. Never paste tokens into chat."
-read -r -s -p "Upstox Analytics Token (hidden): " UPSTOX_ACCESS_TOKEN
-echo
-if [ -z "$UPSTOX_ACCESS_TOKEN" ]; then
-  echo "Token required."; exit 1
-fi
-export UPSTOX_ACCESS_TOKEN
+# The Analytics Token is retained ONLY inside Termux's private app directory.
+# Never commit it, store it in shared Android storage, or print it to the terminal.
+TOKEN_DIR="$HOME/.config/codex-india-day-trader"
+TOKEN_FILE="$TOKEN_DIR/upstox_analytics_token"
+mkdir -p "$TOKEN_DIR"
+chmod 700 "$TOKEN_DIR"
 
-# Verify the token against an authenticated read-only endpoint before overnight waiting.
-if ! python - <<'PY'
+read_new_token() {
+  echo "Enter your private Upstox Analytics Token (hidden). Never paste it into chat."
+  UPSTOX_ACCESS_TOKEN=""
+  read -r -s -p "Analytics Token: " UPSTOX_ACCESS_TOKEN
+  echo
+  if [ -z "$UPSTOX_ACCESS_TOKEN" ]; then
+    echo "Token required."; return 1
+  fi
+  export UPSTOX_ACCESS_TOKEN
+}
+
+validate_token() {
+  # Exit code 3 is an explicitly rejected/expired token (HTTP 401).
+  # Connectivity/API errors have a different exit code: keep the saved token.
+  python - <<'PY'
+import sys
 from india_trader.upstox import UpstoxReader, INDICES
 try:
     UpstoxReader().candles(INDICES['NIFTY'])
-    print('Upstox authenticated market-data check: OK',flush=True)
+    print('Upstox market-data authentication: OK', flush=True)
 except Exception as exc:
-    print('Upstox data check failed: '+str(exc),flush=True)
-    raise SystemExit(1)
+    message = str(exc)
+    print('Upstox validation failed: '+message, flush=True)
+    sys.exit(3 if 'HTTP 401' in message else 2)
 PY
-then
-  echo "Fix or replace the token before leaving the app running overnight."
-  exit 1
+}
+
+save_token() {
+  local temporary
+  temporary="$(mktemp "$TOKEN_DIR/.token.XXXXXXXX")"
+  chmod 600 "$temporary"
+  printf '%s\n' "$UPSTOX_ACCESS_TOKEN" > "$temporary"
+  mv -f "$temporary" "$TOKEN_FILE"
+  chmod 600 "$TOKEN_FILE"
+  echo "Token saved in private Termux storage. It will be reused next time."
+}
+
+token_from_file=0
+needs_save=0
+UPSTOX_ACCESS_TOKEN=""
+if [ -f "$TOKEN_FILE" ]; then
+  chmod 600 "$TOKEN_FILE"
+  IFS= read -r UPSTOX_ACCESS_TOKEN < "$TOKEN_FILE" || true
+  if [ -n "$UPSTOX_ACCESS_TOKEN" ]; then
+    token_from_file=1
+    export UPSTOX_ACCESS_TOKEN
+    echo "Checking saved Upstox Analytics Token..."
+  fi
+fi
+if [ "$token_from_file" -eq 0 ]; then
+  read_new_token
+  needs_save=1
+fi
+
+if validate_token; then
+  :
+else
+  status=$?
+  if [ "$status" -eq 3 ] && [ "$token_from_file" -eq 1 ]; then
+    echo "Saved token expired or was revoked. Enter a replacement."
+    read_new_token
+    if ! validate_token; then
+      echo "Replacement token failed verification; saved token unchanged."
+      exit 1
+    fi
+    needs_save=1
+  else
+    echo "Market-data validation failed; saved token unchanged."
+    exit 1
+  fi
+fi
+
+if [ "$needs_save" -eq 1 ]; then
+  save_token
 fi
 
 # Keep the existing Upstox dashboard if already running; do not start a second server.
