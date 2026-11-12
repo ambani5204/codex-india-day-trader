@@ -38,7 +38,6 @@ def analyze(summary: dict) -> str:
     day = summary["date_ist"]
     counts = summary.get("event_counts", {})
     trades = int(summary.get("closed_trades", 0))
-    net = float(summary.get("net_pnl_inr_estimated", 0))
     signals = int(counts.get("INDEX_SIGNAL", 0))
     rejections = int(counts.get("SIGNAL_REJECTED", 0))
     errors = int(counts.get("MARKET_DATA_ERROR", 0))
@@ -47,7 +46,7 @@ def analyze(summary: dict) -> str:
         "",
         f"Market: {summary.get('market', 'UNKNOWN')}",
         f"Session status: {summary.get('status', 'UNKNOWN')}",
-        f"Paper trades closed: {trades}; estimated net P&L: ₹{net:.2f}",
+        f"Paper trades closed: {trades}; private P&L intentionally withheld",
         f"Signals: {signals}; rejected signals: {rejections}; data errors: {errors}",
         "",
         "## Diagnostics",
@@ -60,10 +59,8 @@ def analyze(summary: dict) -> str:
         lines.append("- Some signals were rejected by eligibility, liquidity, or risk checks; aggregate counts cannot identify which guard dominated.")
     if not signals:
         lines.append("- No qualifying index signals were recorded; this alone does not prove the strategy is good or bad.")
-    if trades and net < 0:
-        lines.append("- Estimated net losses occurred; inspect entry/exit quote snapshots in private journals to attribute slippage, spread, timing and stop placement.")
-    if trades and net >= 0:
-        lines.append("- Positive paper result is not evidence of a repeatable edge or achievable broker fills.")
+    if trades:
+        lines.append("- Private trade-level data is required to establish whether exits were profitable and attribute slippage, spread, timing or stop placement.")
     if not trades:
         lines.append("- No closed paper trades. Check whether there were signals, rejections or incomplete sessions.")
     lines += [
