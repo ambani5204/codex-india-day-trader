@@ -160,6 +160,11 @@ class SimplePlaybookTests(unittest.TestCase):
                 min_train=3,min_validation=2,min_holdout=2)
             self.assertEqual(result['precommitted_configurations'],4)
             self.assertEqual(len(result['results']),4)
+            self.assertTrue(all('validation_rejections' in row and
+                                'validation_candidate_signals' in row and
+                                'train_candidate_signals' in row
+                                for row in result['results']))
+            self.assertIn('first rejection',result['diagnostic_note'].lower())
             self.assertFalse(result['safe_to_scale'])
             self.assertFalse(result['safe_to_deploy_automatically'])
             self.assertIsNone(result['actual_futures_or_options_profit_inr'])
