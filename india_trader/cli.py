@@ -132,6 +132,13 @@ def main(argv=None):
     sums.add_argument('--period',choices=['day','month'],default='day')
     sums.add_argument('--date',help='YYYY-MM-DD for day, YYYY-MM for month')
     sums.add_argument('--database',default='trader/paper.sqlite3')
+    btidx=sub.add_parser('backtest-index-signals',
+        help='Historical index-only 5m replay using SAME multi-signal strategy; NO options profit figures')
+    btidx.add_argument('--from-date',required=True,help='YYYY-MM-DD, inclusive')
+    btidx.add_argument('--to-date',required=True,help='YYYY-MM-DD, inclusive')
+    btidx.add_argument('--market',choices=['AUTO','NIFTY','SENSEX','BOTH'],default='AUTO')
+    btidx.add_argument('--cache-dir',default='trader/backtest_cache')
+    btidx.add_argument('--out',default='trader/backtests/index_signals.json')
     adv=sub.add_parser('paper-advanced',help='EXPERIMENTAL all-session multi-signal, long options + hedged credit spreads; paper ONLY')
     adv.add_argument('--market',choices=['NIFTY','SENSEX'],required=True)
     adv.add_argument('--master',default='trader/upstox_instruments.json')
@@ -162,6 +169,20 @@ def dispatch(a):
     if a.cmd=='db-report':
         from .storage import period_report
         dump(period_report(a.period,a.date,a.database));return 0
+    if a.cmd=='backtest-index-signals':
+        from .historical_backtest import annual_signal_backtest
+        result=annual_signal_backtest(a.from_date,a.to_date,a.market,
+            cache_dir=a.cache_dir,out=a.out)
+        dump({'kind':result['kind'],'from_date':result['from_date'],
+              'to_date':result['to_date'],'markets':result['market_mode'],
+              'days_analyzed':result['days_analyzed'],
+              'days_with_complete_bars':result['days_with_complete_bars'],
+              'missing_or_incomplete_days':result['missing_or_incomplete_days'],
+              'candidate_signals':result['candidate_signals'],
+              'by_strategy':result['by_strategy'],
+              'options_net_pnl':None,'results_path':a.out,
+              'warning':result['warning']})
+        return 0
     if a.cmd=='upstox-sync':
         from .upstox import sync_instruments
         dump(sync_instruments(a.out));return 0
