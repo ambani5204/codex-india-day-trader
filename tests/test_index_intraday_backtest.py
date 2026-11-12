@@ -93,6 +93,10 @@ class IndexOnlyDayTests(unittest.TestCase):
         bars=complete_day(DAY)
         fourth=bars[3]
         bars[3]=Bar(fourth.time,100.8,103,99.5,100.6,100)
+        next_bar=bars[4]
+        # Next opening is near the rejection close, not a favorable gap
+        # back near the wick high; the midpoint target cannot pay 1.5R.
+        bars[4]=Bar(next_bar.time,100.6,102,99.5,100,100)
         result=simulate_index_day(bars,DAY,'SENSEX')
         self.assertEqual(result['status'],'OK')
         self.assertGreater(result['rejections'].get('NEXT_OPEN_INVALIDATES_STOP_TARGET_OR_RR',0),0)
