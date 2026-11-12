@@ -1,94 +1,77 @@
-name: Nightly simple ORB and EMA strategy research (no broker orders)
+name: Nightly frozen ORB and EMA forward research — review only
 
 on:
   workflow_dispatch:
   schedule:
-    # 17:30 UTC = 23:00 India time, Monday-Friday.
-    # GitHub scheduled jobs may run later than the nominal time.
+    # 17:30 UTC = 23:00 India time on weekdays.
+    # Research ends yesterday IST to exclude incomplete same-day candles.
     - cron: "30 17 * * 1-5"
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
-  group: nightly-index-strategy-research
+  group: frozen-simple-index-research-review
   cancel-in-progress: false
 
 jobs:
-  bounded_research:
+  frozen_forward_monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Check regression tests before optimization
+      - name: Validate research code before reading market data
         run: python -m unittest discover -s tests -q
 
-      - name: Restore historical 5-minute candle cache
+      - name: Restore historical index candles
         uses: actions/cache@v4
         with:
           path: trader/backtest_cache
-          key: research-upstox-index-candles-v1-${{ github.run_id }}
+          key: frozen-index-forward-v1-${{ github.run_id }}
           restore-keys: |
-            research-upstox-index-candles-v1-
+            frozen-index-forward-v1-
 
-      - name: Run finite historical walk-forward (requires private market-data secret)
-        shell: bash
+      - name: Collect post-freeze sessions and test four FIXED hypotheses
         env:
           UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
         run: |
+          python -m india_trader.nightly_forward \
+            --out trader/backtests/nightly_forward_research.json
+
+      - name: Render review proposal from verified report
+        run: |
+          python -m india_trader.research_review \
+            --report trader/backtests/nightly_forward_research.json \
+            --markdown-out trader/backtests/nightly_research_review.md
+
+      - name: Update one GitHub Issue for human approval (Mondays or manual runs)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
           set -euo pipefail
-          mkdir -p trader/backtests
-          if [[ -z "${UPSTOX_ACCESS_TOKEN:-}" ]]; then
-            python - <<'PY'
-          import json
-          from pathlib import Path
-          Path('trader/backtests/nightly_research_status.json').write_text(
-              json.dumps({'status':'NOT_RUN_MISSING_UPSTOX_ACCESS_TOKEN',
-                          'reason':'Set GitHub Actions repository secret UPSTOX_ACCESS_TOKEN. No market data or results were fabricated.'},
-                         indent=2)+'\n',encoding='utf-8')
-          PY
-            echo "Historical research not run: UPSTOX_ACCESS_TOKEN repository secret is missing." >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
+          DOW="$(TZ=Asia/Kolkata date +%u)"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" || "${DOW}" == "1" ]]; then
+            python -m india_trader.research_review \
+              --report trader/backtests/nightly_forward_research.json \
+              --markdown-out trader/backtests/nightly_research_review.md \
+              --publish
+          else
+            echo "Nightly research complete; updating the single review Issue on Monday."
           fi
-          END=$(TZ=Asia/Kolkata date -d 'yesterday' +%F)
-          START=$(TZ=Asia/Kolkata date -d "${END} - 720 days" +%F)
-          if [[ "${START}" < "2025-10-01" ]]; then START="2025-10-01"; fi
 
-          echo "Running four-rule simple ORB/EMA research from ${START} to ${END}."
-          python tools/india.py research-simple-edge \
-            --from-date "${START}" --to-date "${END}" \
-            --market AUTO --slippage-points 1 \
-            --out trader/backtests/nightly_research_status.json
-
-          python - <<'PY'
-          import json,os
-          from pathlib import Path
-          summary=json.loads(Path('trader/backtests/nightly_research_status.json').read_text())
-          lines=[
-            '## Bounded index strategy research',
-            '',
-            'Status: '+summary['status'],
-            'Window: '+summary['from_date']+' to '+summary['to_date'],
-            'Precommitted simple hypotheses: '+str(summary['precommitted_configurations']),
-            'Real trading automatically enabled: **No**',
-            'Actual after-tax futures/options profit verified: **No**',
-            '',
-            'This is a cost-adjusted FUTURES proxy on spot-index candles. '
-            'It cannot establish real brokerage-executable returns.'
-          ]
-          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as handle:
-            handle.write('\n'.join(lines)+'\n')
-          PY
-
-      - name: Preserve report even if research fails
+      - name: Preserve report, diagnostics and review proposal
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-simple-orb-ema-research-report
-          path: trader/backtests/nightly_research_status.json
+          name: frozen-index-research-review
+          path: |
+            trader/backtests/nightly_forward_research.json
+            trader/backtests/nightly_research_review.md
           if-no-files-found: warn
           retention-days: 30
