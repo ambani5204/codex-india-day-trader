@@ -58,3 +58,9 @@ python tools/india.py dashboard --mode upstox
 ```
 
 For an account-free *synthetic example*, run `python tools/india.py demo-generate` then `python tools/india.py dashboard --mode demo`. Never present invented demo net profit as strategy validation. `paper-upstox` uses option quote bid/ask depth, stops/targets on the option **premium** after a closed index ORB trigger, conservative stale quote rejection, costs and modeled slippage. An index is NOT a tradable contract. There is no broker order submission code. No credentials in chat. Upstox OAuth access tokens expire daily; read-only dashboard uptime does not imply live data uptime.
+
+## Full-day India options skill relationship
+
+The experimental all-day engine journals ONLY hypothetical Upstox buy-to-open longs or hedged two-leg credit spreads and their quote-based closes. NO order endpoint or actual fills.
+
+See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
