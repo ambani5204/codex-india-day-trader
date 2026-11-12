@@ -33,3 +33,9 @@ Report only numbers supplied by a verified filing. Do not infer undisclosed resu
 ## Related skills
 
 The other ten folders in `.agents/skills/` cover scan → entry → exit → timemachine → budget → risk → broker, plus news, alerts and analyst. Indian insider disclosures are provided by `trader-pelosi` to preserve the 11-skill organization. Optional original US Claude/Python contents can be copied with `scripts/import_upstream.py`.
+
+## Full-day India options skill relationship
+
+Indian listed-company earnings analysis remains an on-demand CSV workflow. It is not an automatic index options trade signal.
+
+See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
