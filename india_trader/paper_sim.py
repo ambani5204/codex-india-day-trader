@@ -128,7 +128,8 @@ class PaperEngine:
     """One buy-to-open index option and sell-to-close, signal never sends orders."""
     def __init__(self, symbol, quantity, capital, max_trade_loss, exchange=None,
                  stop_pct=15.0,target_pct=30.0,max_spread_pct=2.0,slippage_bps=5.0,
-                 latency_ms=750, max_allocation_fraction=0.25, fee_profile="ZERODHA"):
+                 latency_ms=750, max_allocation_fraction=0.25, fee_profile="ZERODHA",
+                 flat_by=time(15,20)):
 
         self.symbol=symbol
         if fee_profile not in {'ZERODHA','UPSTOX'}:raise ValueError('Unsupported brokerage profile')
@@ -145,6 +146,7 @@ class PaperEngine:
         self.stop_pct=stop_pct;self.target_pct=target_pct
         self.max_spread_pct=max_spread_pct; self.slippage_bps=slippage_bps
         self.latency_ms=latency_ms
+        self.flat_by=flat_by
         self.position=None;self.pending=None;self.events=[];self.last_quote=None
 
     def process(self, quote, signal=False, reason='MANUAL', now=None, max_age_seconds=None):
@@ -163,7 +165,7 @@ class PaperEngine:
             reason=None
             if quote.bid<=self.position['stop_price']:reason='STOP'
             elif quote.bid>=self.position['target_price']:reason='TARGET'
-            elif quote.timestamp.astimezone(IST).time()>=time(15,20):reason='TIME_EXIT'
+            elif quote.timestamp.astimezone(IST).time()>=self.flat_by:reason='TIME_EXIT'
             if reason:
                 self.pending={'action':'SELL','reason':reason,
                               'due':quote.timestamp+timedelta(milliseconds=self.latency_ms)}
