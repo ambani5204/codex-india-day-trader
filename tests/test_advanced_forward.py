@@ -164,15 +164,15 @@ class AdvancedWorkerTests(unittest.TestCase):
             file=next(Path(args.directory).glob('*.jsonl'))
             events=[json.loads(line) for line in file.read_text().splitlines()]
             kinds=[x['event'] for x in events]
-            self.assertIn('STRUCTURE_REJECTED',kinds)
-            note=next(x for x in events if x['event']=='STRUCTURE_REJECTED')
-            self.assertIn('13:45',note['reason'])
-            self.assertEqual(note['fallback'],'TRY_NON_EXPIRING_LONG_OPTION')
+            self.assertIn('STRATEGY_DECISION',kinds)
+            decision=next(x for x in events if x['event']=='STRATEGY_DECISION')
+            self.assertEqual(decision['structure_priority'],['LONG','CREDIT'])
+            self.assertNotIn('STRUCTURE_REJECTED',kinds)
             self.assertIn('OPTION_SELECTION',kinds)
             contract=next(x['contract'] for x in events if x['event']=='OPTION_SELECTION')
             self.assertEqual(contract['expiry'],'2026-11-19')
             self.assertEqual(contract['option_type'],'CE')
-            self.assertTrue(next(x for x in events if x['event']=='OPTION_SELECTION')['fallback_from_credit'])
+            self.assertFalse(next(x for x in events if x['event']=='OPTION_SELECTION')['fallback_from_credit'])
             self.assertLessEqual(contract['risk_plan']['estimated_stop_loss_including_charges'],1000)
             self.assertGreaterEqual(contract['risk_plan']['net_reward_risk'],1.5)
             self.assertIn('PAPER_TRADE_CLOSED',kinds)
@@ -205,6 +205,10 @@ class AdvancedWorkerTests(unittest.TestCase):
             kinds=[x['event'] for x in events]
             self.assertIn('STRUCTURE_REJECTED',kinds)
             self.assertIn('SIGNAL_REJECTED',kinds)
+            rejected=[x for x in events if x['event']=='STRUCTURE_REJECTED']
+            self.assertEqual([x['trade_structure'] for x in rejected],
+                             ['NON_EXPIRING_LONG_OPTION','DEFINED_RISK_CREDIT_SPREAD'])
+            self.assertIn('13:45',rejected[1]['reason'])
             self.assertNotIn('OPTION_SELECTION',kinds)
             self.assertNotIn('PAPER_TRADE_CLOSED',kinds)
             self.assertNotIn('PAPER_SPREAD_OPEN',kinds)
