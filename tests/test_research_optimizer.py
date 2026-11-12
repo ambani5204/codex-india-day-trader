@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from india_trader.core import Bar,IST
-from india_trader.index_intraday_backtest import _policy_signal_guard,_policy_adjust_target
+from india_trader.index_intraday_backtest import _policy_signal_guard,_policy_adjust_target,simulate_index_day
 from india_trader.research_optimizer import (
     futures_cost_proxy, _candidate_params, _eligible, _period_days,
     run_walk_forward_research)
@@ -127,6 +127,8 @@ class WalkForwardTests(unittest.TestCase):
                 days.append(date)
             date+=dt.timedelta(days=1)
         data=[bar for day in days for bar in synthetic_day(day)]
+        first=simulate_index_day(synthetic_day(days[0]),days[0],'SENSEX')
+        self.assertGreater(len(first['trades']),0,repr(first))
         fake=FakeReader({INDICES['SENSEX']:data})
         with tempfile.TemporaryDirectory() as tmp:
             folder=Path(tmp)
@@ -142,7 +144,7 @@ class WalkForwardTests(unittest.TestCase):
             self.assertFalse(report['safe_to_deploy_automatically'])
             self.assertEqual(report['status'],
                 'NO_CANDIDATE_PASSED_TRAIN_AND_VALIDATION')
-            self.assertEqual(report['baseline_by_split']['TRAIN']['trades']>0,True)
+            self.assertGreater(report['baseline_by_split']['TRAIN']['trades'],0,repr(report['baseline_by_split']))
             self.assertTrue((folder/'report.json').exists())
             self.assertEqual(json.loads((folder/'report.json').read_text())['status'],
                              report['status'])
