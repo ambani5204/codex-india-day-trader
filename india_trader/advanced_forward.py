@@ -291,20 +291,37 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                 'atm_iv_pct':round(iv,2),
                                 'iv_threshold_pct':args.credit_iv_threshold})
                         if kind=='CREDIT':
-                            if dt.date.fromisoformat(expiry)==today and now.time()>dt.time(13,45):
-                                raise UpstoxError('No new expiry-day short spreads after 13:45 IST')
-                            selection=select_credit_spread(records,chain,args.market,signal['direction'],
-                                                           last.close,today,effective_settings,expiry=expiry,
-                                                           remaining_daily_loss=remaining,
-                                                           min_reward_risk=.25,index_stop_plan=stop_plan)
-                            # Assume both legs fill at visible bid/ask instantaneously:
-                            # explicitly optimistic, not an exchange fill or margin validation.
-                            record({'event':'PAPER_SPREAD_OPEN','timestamp':now.isoformat(),
-                                    'contract':selection,'estimated_max_loss':
-                                    selection['estimated_max_expiry_loss_after_fees'],
-                                    'warning':'Simultaneous 2-leg fill assumed; no actual brokerage or margin'})
-                            pos={'kind':'CREDIT','contract':selection}
-                        else:
+                            try:
+                                if dt.date.fromisoformat(expiry)==today and now.time()>dt.time(13,45):
+                                    raise UpstoxError('No new expiry-day short spreads after 13:45 IST')
+                                selection=select_credit_spread(
+                                    records,chain,args.market,signal['direction'],
+                                    last.close,today,effective_settings,expiry=expiry,
+                                    remaining_daily_loss=remaining,
+                                    min_reward_risk=.25,index_stop_plan=stop_plan)
+                            except UpstoxError as credit_error:
+                                # A rejected SHORT credit spread is NOT a rejected
+                                # underlying signal. Independently evaluate a
+                                # non-expiring LONG CE/PE under its own 1.5 net R:R
+                                # and structural-stop/whole-lot risk guards.
+                                # Missing market data/API failures are handled by
+                                # the outer exception path, not hidden here.
+                                record({'event':'STRUCTURE_REJECTED',
+                                        'timestamp':now.isoformat(),
+                                        'trade_structure':'DEFINED_RISK_CREDIT_SPREAD',
+                                        'reason':str(credit_error),
+                                        'fallback':'TRY_NON_EXPIRING_LONG_OPTION',
+                                        'note':'Fallback does not waive any risk, IV or liquidity requirement'})
+                                kind='LONG'
+                            else:
+                                # Quote-based paper execution, not guaranteed
+                                # simultaneous hedge fills or verified margin.
+                                record({'event':'PAPER_SPREAD_OPEN','timestamp':now.isoformat(),
+                                        'contract':selection,'estimated_max_loss':
+                                        selection['estimated_max_expiry_loss_after_fees'],
+                                        'warning':'Simultaneous 2-leg fill assumed; no actual brokerage or margin'})
+                                pos={'kind':'CREDIT','contract':selection}
+                        if kind=='LONG':
                             # Long option: do not use same-day expiry when settlement
                             # or auto-exercise is not modeled.
                             preferred=select_atm(records,args.market,
