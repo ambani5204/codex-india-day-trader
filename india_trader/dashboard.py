@@ -32,13 +32,18 @@ def read_journals(folder):
                 except ValueError:pass
         if not data:continue
         meta=next((e for e in data if e.get('event')=='SESSION_START'),data[0])
+        starts=sum(e.get('event') in {'PAPER_BUY_FILLED','PAPER_SPREAD_OPEN'} for e in data)
+        closes=sum(e.get('event')=='PAPER_TRADE_CLOSED' for e in data)
+        unresolved=(starts>closes or any(e.get('event')=='UNRESOLVED_POSITION' for e in data))
         session={'name':p.stem,'date':str(meta.get('timestamp',''))[:10],
                  'market':meta.get('market','UNKNOWN'),
                  'data_source':meta.get('source','UNKNOWN'),
                  'last_event':data[-1].get('event','UNKNOWN'),
-                 'unresolved':any(e.get('event')=='PAPER_BUY_FILLED' for e in data) and not any(e.get('event')=='PAPER_TRADE_CLOSED' for e in data),
+                 'unresolved':unresolved,
                  'last_update':data[-1].get('timestamp')}
-        signal=next((e for e in reversed(data) if e.get('event')=='INDEX_SIGNAL'),None)
+        signal=next((e for e in reversed(data)
+                     if e.get('event') in {'INDEX_SIGNAL','OPTION_SELECTION','PAPER_SPREAD_OPEN'} and
+                     isinstance(e.get('contract'),dict)),None)
         if signal and isinstance(signal.get('contract'),dict):
             choice=signal['contract']
             session['contract_selection']={
@@ -47,7 +52,11 @@ def read_journals(folder):
                 'iv':choice.get('iv'),'theta':choice.get('theta'),
                 'quoted_ask':choice.get('quoted_ask'),
                 'selection':choice.get('selection'),
-                'estimated_stop_loss':choice.get('estimated_stop_loss_including_charges')}
+                'estimated_stop_loss':choice.get('estimated_stop_loss_including_charges'),
+                'short_strike':choice.get('short_strike'),
+                'long_strike':choice.get('long_strike'),
+                'credit':choice.get('credit_per_unit'),
+                'structure':choice.get('strategy')}
         sessions.append(session)
         quotes=[e for e in data if e.get('event')=='QUOTE_SNAPSHOT']
         if quotes:
@@ -63,7 +72,12 @@ def read_journals(folder):
                    'buy':t.get('buy_price'),'sell':t.get('sell_price'),'quantity':t.get('quantity'),
                    'gross':t.get('gross_pnl'),'charges':t.get('fees',{}).get('total'),
                    'net':t.get('net_pnl'),'reason':t.get('reason'),
-                   'fee_profile':t.get('fees',{}).get('broker_profile','ZERODHA')}
+                   'fee_profile':t.get('fees',{}).get('broker_profile','ZERODHA'),
+                   'trade_structure':t.get('trade_structure'),
+                   'short_strike':t.get('short_strike'),'long_strike':t.get('long_strike'),
+                   'option_type':t.get('symbol','').split(':')[-1],
+                   'entry_credit':(t.get('sell_price') or 0)-(t.get('buy_price') or 0) if t.get('trade_structure') else None,
+                   'exit_debit':t.get('exit_debit')}
             trades.append(trade)
             for key,val in t.get('fees',{}).items():
                 if key in {'brokerage','stt','exchange_transaction_charge','gst','sebi','ipft','stamp_duty'}:
