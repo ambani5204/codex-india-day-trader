@@ -33,3 +33,9 @@ Do not size NIFTY 50 or SENSEX directly. For index derivatives explicitly choose
 ## Related skills
 
 The other ten folders in `.agents/skills/` cover scan → entry → exit → timemachine → budget → risk → broker, plus news, alerts and analyst. Indian insider disclosures are provided by `trader-pelosi` to preserve the 11-skill organization. Optional original US Claude/Python contents can be copied with `scripts/import_upstream.py`.
+
+## Full-day India options skill relationship
+
+Experimental paper-advanced checks premium allocation and defined-risk wing width minus credit against existing INR risk limits. Never scale or relax risk limits simply to force a trade.
+
+See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
