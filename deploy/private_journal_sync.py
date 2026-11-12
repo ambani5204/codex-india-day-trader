@@ -46,7 +46,21 @@ def main():
     if repo.get("full_name", "").lower() != DEST.lower() or repo.get("private") is not True:
         raise RuntimeError("Destination is missing or not private: upload refused")
     if args.verify_only:
-        print("Private destination accessible; token can read repository metadata.")
+        probe_path = "/repos/" + DEST + "/contents/.journal-sync-write-probe.json"
+        existing_sha = None
+        try:
+            existing_sha = call(probe_path, token).get("sha")
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+        payload = {
+            "message": "Verify scoped private journal write access",
+            "content": base64.b64encode(b'{"status":"private-write-ok"}\\n').decode("ascii"),
+        }
+        if existing_sha:
+            payload["sha"] = existing_sha
+        call(probe_path, token, "PUT", payload)
+        print("Private destination verified; token can WRITE safely.")
         return
     today = dt.datetime.now(IST).date().isoformat()
     files = sorted(SOURCE.glob(today + "_*.jsonl"))
