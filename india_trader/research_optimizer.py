@@ -258,6 +258,11 @@ def run_walk_forward_research(start,end,market='AUTO',reader=None,
                  'validation_sideways_filtered':validation['rejections'].get(
                      'SIDEWAYS_EFFICIENCY_RATIO',0)}
         trials.append(summary)
+        if n%12==0 or n==max_configs:
+            eligible=sum(1 for item in trials if item['validation_pass'])
+            print(f'Research: {n}/{max_configs} predefined scenarios; '
+                  f'{eligible} passed training+validation proxy-cost gates',
+                  flush=True)
         if passed_val:
             # Choice is based ONLY on TRAIN and VALIDATION results. Holdout
             # cannot influence selection or ranking.
