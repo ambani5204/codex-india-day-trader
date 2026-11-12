@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from india_trader.core import Bar, IST
+from india_trader.paper_sim import Quote
 from india_trader.advanced_forward import run_advanced, previous_day_state
 from india_trader.upstox import UpstoxError
 
@@ -40,6 +41,57 @@ class MockApi:
                                         'market_data':{'bid_price':bid,'ask_price':ask,
                                                        'bid_qty':1000,'ask_qty':1000}}})
         return data
+
+
+class ExpiryFallbackApi:
+    """14:00 expiry-day breakout: short spreads prohibited, next expiry long valid."""
+    def __init__(self, clock, allow_long=True):
+        self.clock=clock
+        self.allow_long=allow_long
+
+    def candles(self,index):
+        start=dt.datetime(2026,11,12,9,15,tzinfo=IST)
+        bars=[]
+        for i in range(57):  # 09:15 through 13:55, full 5m bars
+            time=start+dt.timedelta(minutes=5*i)
+            if i==56:
+                bars.append(Bar(time,1040,1065,1020,1060))
+            else:
+                bars.append(Bar(time,1000,1005,995,1000))
+        return bars
+
+    def option_chain(self,index,expiry):
+        if expiry=='2026-11-12':
+            return [{'expiry':expiry,'strike_price':1060,
+                     'call_options':{'instrument_key':'BSE_FO|CURRENT_CE',
+                                     'option_greeks':{'iv':24},
+                                     'market_data':{}},
+                     'put_options':{'option_greeks':{'iv':24}}}]
+        if expiry=='2026-11-19':
+            return [{'expiry':expiry,'strike_price':1050,
+                     'call_options':{'instrument_key':'BSE_FO|NEXT_CE',
+                                     'option_greeks':{'delta':.5,'iv':24},
+                                     'market_data':{'bid_price':99,'ask_price':100,
+                                                    'bid_qty':1000 if self.allow_long else 0,
+                                                    'ask_qty':1000 if self.allow_long else 0}}}]
+        raise AssertionError('unexpected option-chain expiry '+expiry)
+
+    def full_quote(self,instrument_key):
+        if instrument_key!='BSE_FO|NEXT_CE':
+            raise AssertionError('Wrong long instrument '+instrument_key)
+        now=self.clock.clock()
+        return Quote(now,99,100,1000,1000)
+
+
+def expiry_fallback_master():
+    return [
+      {'segment':'BSE_FO','instrument_type':'CE',
+       'underlying_symbol':'SENSEX','instrument_key':'BSE_FO|CURRENT_CE',
+       'expiry':'2026-11-12','strike_price':1060,'lot_size':20},
+      {'segment':'BSE_FO','instrument_type':'CE',
+       'underlying_symbol':'SENSEX','instrument_key':'BSE_FO|NEXT_CE',
+       'expiry':'2026-11-19','strike_price':1050,'lot_size':20},
+    ]
 
 
 def master():
@@ -85,6 +137,76 @@ class AdvancedWorkerTests(unittest.TestCase):
             self.assertEqual(trade['reason'],'TIME_EXIT')
             self.assertLess(trade['net_pnl'],trade['gross_pnl'])
             self.assertTrue(trade['simulated'])
+
+
+    def test_expiry_credit_cutoff_attempts_qualified_next_expiry_long(self):
+        clock=Clock()
+        clock.now=dt.datetime(2026,11,12,14,0,2,tzinfo=IST)
+        config={'paper':True,'allow_live_orders':False,'allow_derivatives':True,
+                'capital_inr':100000,'max_loss_per_trade_inr':500,
+                'advanced_risk_percent':1.0,
+                'max_daily_loss_inr':1500,'max_trades_per_day':3,
+                'max_allocation_fraction':.25}
+        args=SimpleNamespace(market='SENSEX',poll_seconds=30,cooldown_minutes=15,
+            master='',directory='',max_quote_age_seconds=15,credit_iv_threshold=18)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            m=root/'master.json'
+            m.write_text(json.dumps({'asof':'2026-11-12',
+                                     'records':expiry_fallback_master()}))
+            args.master=str(m)
+            args.directory=str(root/'journals')
+            from io import StringIO
+            from contextlib import redirect_stdout
+            with redirect_stdout(StringIO()):
+                self.assertEqual(run_advanced(args,config,ExpiryFallbackApi(clock),
+                                              clock.clock,clock.sleep),0)
+            file=next(Path(args.directory).glob('*.jsonl'))
+            events=[json.loads(line) for line in file.read_text().splitlines()]
+            kinds=[x['event'] for x in events]
+            self.assertIn('STRUCTURE_REJECTED',kinds)
+            note=next(x for x in events if x['event']=='STRUCTURE_REJECTED')
+            self.assertIn('13:45',note['reason'])
+            self.assertEqual(note['fallback'],'TRY_NON_EXPIRING_LONG_OPTION')
+            self.assertIn('OPTION_SELECTION',kinds)
+            contract=next(x['contract'] for x in events if x['event']=='OPTION_SELECTION')
+            self.assertEqual(contract['expiry'],'2026-11-19')
+            self.assertEqual(contract['option_type'],'CE')
+            self.assertLessEqual(contract['risk_plan']['estimated_stop_loss_including_charges'],1000)
+            self.assertGreaterEqual(contract['risk_plan']['net_reward_risk'],1.5)
+            self.assertIn('PAPER_TRADE_CLOSED',kinds)
+            self.assertNotIn('PAPER_SPREAD_OPEN',kinds)
+
+    def test_expiry_credit_fallback_rejects_unliquid_long_without_faking_trades(self):
+        clock=Clock()
+        clock.now=dt.datetime(2026,11,12,14,0,2,tzinfo=IST)
+        config={'paper':True,'allow_live_orders':False,'allow_derivatives':True,
+                'capital_inr':100000,'max_loss_per_trade_inr':500,
+                'advanced_risk_percent':1.0,
+                'max_daily_loss_inr':1500,'max_trades_per_day':3,
+                'max_allocation_fraction':.25}
+        args=SimpleNamespace(market='SENSEX',poll_seconds=30,cooldown_minutes=15,
+            master='',directory='',max_quote_age_seconds=15,credit_iv_threshold=18)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            m=root/'master.json'
+            m.write_text(json.dumps({'asof':'2026-11-12',
+                                     'records':expiry_fallback_master()}))
+            args.master=str(m)
+            args.directory=str(root/'journals')
+            from io import StringIO
+            from contextlib import redirect_stdout
+            with redirect_stdout(StringIO()):
+                self.assertEqual(run_advanced(args,config,ExpiryFallbackApi(clock,False),
+                                              clock.clock,clock.sleep),0)
+            file=next(Path(args.directory).glob('*.jsonl'))
+            events=[json.loads(line) for line in file.read_text().splitlines()]
+            kinds=[x['event'] for x in events]
+            self.assertIn('STRUCTURE_REJECTED',kinds)
+            self.assertIn('SIGNAL_REJECTED',kinds)
+            self.assertNotIn('OPTION_SELECTION',kinds)
+            self.assertNotIn('PAPER_TRADE_CLOSED',kinds)
+            self.assertNotIn('PAPER_SPREAD_OPEN',kinds)
 
 
     def test_start_advanced_at_1125_after_0915_no_trade_orb_session(self):
