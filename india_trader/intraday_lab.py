@@ -21,6 +21,94 @@ def ema(values, window):
     return result
 
 
+def _opening_range_signal(closed, end):
+    """Classify fresh opening-range events from CLOSED 5m candles only.
+
+    BREAKOUT: first candle closes outside a buffered 09:15–09:30 range.
+    FAKEOUT: an inside-range candle sweeps above/below range on its wick,
+             rejects the level, and finishes back inside (no prior close out).
+    TRAP: an outside CLOSE was recorded on the preceding 1–3 candles, and
+          price closes back inside on the opposite side of that boundary.
+          The trade points opposite to those caught in the failed breakout.
+    All three are mutually exclusive for a given closed bar.
+    """
+    opening=[b for b in closed if b.time.time() in
+             (dt.time(9,15),dt.time(9,20),dt.time(9,25))]
+    if [b.time.time() for b in opening] != [dt.time(9,15),dt.time(9,20),dt.time(9,25)]:
+        return None
+    ceiling=max(b.high for b in opening)
+    floor=min(b.low for b in opening)
+    width=ceiling-floor
+    if width<=0 or len(closed)<4:
+        return None
+    # Require a small, precommitted breakout clearance to avoid comparing
+    # merely rounded equal-price touches with fully confirmed breakouts.
+    buffer=max(.05*width,1e-7)
+    last=closed[-1]
+    prev=closed[-2]
+    inside=(floor<=last.close<=ceiling)
+    if inside:
+        # A previously confirmed breakout can trap those entering after it.
+        # Only recent 1–3 outside closes qualify; much later return-to-range
+        # after a trend is not labeled a trap.
+        for old_side,boundary,reverse in (('UP',ceiling,'BEAR'),('DOWN',floor,'BULL')):
+            if old_side=='UP' and not (prev.close>ceiling+buffer and last.close<ceiling-buffer):
+                continue
+            if old_side=='DOWN' and not (prev.close<floor-buffer and last.close>floor+buffer):
+                continue
+            episode=[]
+            for old in reversed(closed[:-1]):
+                if (old.close>ceiling+buffer if old_side=='UP' else old.close<floor-buffer):
+                    episode.append(old)
+                else:
+                    break
+            if not 1<=len(episode)<=3:
+                continue
+            if old_side=='UP' and not last.close<prev.close:continue
+            if old_side=='DOWN' and not last.close>prev.close:continue
+            peak=(max(b.high for b in episode+[last]) if old_side=='UP'
+                  else min(b.low for b in episode+[last]))
+            return {'strategy':'OPENING_RANGE_TRAP','direction':reverse,
+                    'strength':3,'range_pattern':'TRAP',
+                    'failed_breakout_side':old_side,'sweep_extreme':peak,
+                    'breakout_level':boundary,'bars_outside':len(episode),
+                    'confirmation':'PRIOR_CLOSE_OUTSIDE_THEN_CLOSE_INSIDE'}
+        # A wick sweep, with no breakout close, is a simpler fakeout.
+        # A candle sweeping both levels is ambiguous and is ignored.
+        high_sweep=last.high>ceiling+buffer and last.close<ceiling and last.close>=floor
+        low_sweep=last.low<floor-buffer and last.close>floor and last.close<=ceiling
+        if high_sweep != low_sweep:
+            candle_range=last.high-last.low
+            if candle_range>0:
+                if (high_sweep and prev.close<=ceiling and
+                    prev.high<=ceiling+buffer and last.close<=last.open and
+                    (last.high-max(last.open,last.close))/candle_range>=.20):
+                    return {'strategy':'OPENING_RANGE_FAKEOUT','direction':'BEAR',
+                            'strength':2,'range_pattern':'FAKEOUT',
+                            'failed_breakout_side':'UP','sweep_extreme':last.high,
+                            'breakout_level':ceiling,
+                            'confirmation':'UPPER_WICK_SWEEP_CLOSES_BACK_INSIDE'}
+                if (low_sweep and prev.close>=floor and
+                    prev.low>=floor-buffer and last.close>=last.open and
+                    (min(last.open,last.close)-last.low)/candle_range>=.20):
+                    return {'strategy':'OPENING_RANGE_FAKEOUT','direction':'BULL',
+                            'strength':2,'range_pattern':'FAKEOUT',
+                            'failed_breakout_side':'DOWN','sweep_extreme':last.low,
+                            'breakout_level':floor,
+                            'confirmation':'LOWER_WICK_SWEEP_CLOSES_BACK_INSIDE'}
+    # At least one fully CLOSED candle must cross the buffered range boundary;
+    # do not trade an unconfirmed intrabar breakout.
+    if last.close>ceiling+buffer and prev.close<=ceiling+buffer:
+        return {'strategy':'OPENING_RANGE_BREAKOUT','direction':'BULL',
+                'strength':2,'range_pattern':'BREAKOUT',
+                'breakout_level':ceiling,'confirmation':'CLOSED_ABOVE_OR_HIGH'}
+    if last.close<floor-buffer and prev.close>=floor-buffer:
+        return {'strategy':'OPENING_RANGE_BREAKOUT','direction':'BEAR',
+                'strength':2,'range_pattern':'BREAKOUT',
+                'breakout_level':floor,'confirmation':'CLOSED_BELOW_OR_LOW'}
+    return None
+
+
 def intraday_signal(bars, now, last_bar=None):
     """ORB + EMA trend continuation + oversold/overbought reversal.
 
@@ -45,15 +133,11 @@ def intraday_signal(bars, now, last_bar=None):
                (dt.time(9,15), dt.time(9,20), dt.time(9,25))]
     if len(opening) < 3:
         return None
-    high = max(b.high for b in opening)
-    low = min(b.low for b in opening)
+    event=_opening_range_signal(closed,end)
+    if event:
+        return {**event,'bar':last.time.isoformat(),
+                'confirmed_at':end.isoformat()}
     previous = closed[-2]
-    if last.close > high and previous.close <= high:
-        return {'strategy':'OPENING_RANGE_BREAKOUT','direction':'BULL','strength':2,
-                'bar':last.time.isoformat(),'confirmed_at':end.isoformat()}
-    if last.close < low and previous.close >= low:
-        return {'strategy':'OPENING_RANGE_BREAKOUT','direction':'BEAR','strength':2,
-                'bar':last.time.isoformat(),'confirmed_at':end.isoformat()}
     if len(prices) < 24:
         return None
     fast = ema(prices[:-1], 8)
