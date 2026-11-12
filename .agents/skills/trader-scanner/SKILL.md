@@ -37,3 +37,9 @@ The other ten folders in `.agents/skills/` cover scan → entry → exit → tim
 ## Upstox 5-minute ORB feed (paper only)
 
 If the user has a valid Upstox OAuth token, the non-Kite path is `python tools/india.py upstox-sync` followed by `python tools/india.py paper-upstox --market NIFTY` or `--market SENSEX`. It processes the first fully **closed** 5-minute candle beyond the 09:15–09:30 opening range, then uses an actual ATM option instrument from today's exchange master for paper execution. No live orders. Avoid claiming websocket tick-speed: the current connector polls Upstox V3 REST snapshots. For no account: `python tools/india.py demo-generate` and `python tools/india.py dashboard --mode demo` always produces **SYNTHETIC** demonstration prices, not actual NIFTY/SENSEX data.
+
+## Full-day India options skill relationship
+
+Experimental all-day scanning of completed Upstox 5-minute NIFTY/SENSEX candles adds ORB, EMA cross, and mean reversion. No lookahead; no guaranteed signals.
+
+See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
