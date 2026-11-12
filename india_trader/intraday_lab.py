@@ -245,7 +245,7 @@ def spread_mark(position,chain,market,now,stop_multiplier=2,target_fraction=.4):
     cutoff=dt.time(14,45) if dt.date.fromisoformat(position['expiry'])==now.date() else dt.time(15,15)
     reason=('TIME_EXIT' if tm>=cutoff else
             'CREDIT_STOP' if exit_debit>=position['credit_per_unit']*stop_multiplier else
-            'CREDIT_TARGET' if exit_debit<=position['credit_per_unit']*target_fraction else None)
+            'CREDIT_TARGET' if (exit_debit<=position['credit_per_unit']*target_fraction and net>0) else None)
     return {'reason':reason,'net_pnl':net,'fees':fees,
             'exit_debit':money(exit_debit),'bid_long':long['bid'],
             'ask_short':short['ask'],'source':'INDICATIVE_REST_QUOTES_NOT_EXCHANGE_FILLS'}
