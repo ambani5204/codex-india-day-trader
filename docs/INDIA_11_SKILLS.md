@@ -20,6 +20,12 @@ The original skills are *independent capabilities*, not eleven autonomous tradin
 | trader-analyst | Earnings/financial disclosures for Indian listed companies | Manual CSV; not directly relevant to index option intraday signals |
 | trader-pelosi | India analogue: publicly available SEBI/stock-exchange insider disclosures | Manual CSV; not an index-options intraday execution driver |
 
+## Pure intraday chart replay (independent of CE/PE)
+
+`bash backtest-index-intraday-year.sh` runs a **hypothetical index-direction backtest** using real cached (or downloaded) five-minute NIFTY/SENSEX candles. It reuses both `intraday_signal` and `index_stop_plan` from the advanced paper strategy, including BREAKOUT/FAKEOUT/TRAP/EMA/MEAN_REVERSION signals and technical stops/targets. Entries happen **only at the following five-minute OPEN**. Same-candle ambiguous target/stop hits conservatively exit at the stop; session gaps through a stop are priced at the adverse open; the session ends at 15:10. It enforces one open position, a 15-minute cooldown, three trades per market day and a minimum **1.5 gross chart R:R** at the actual next open.
+
+The outcomes are **index points and normalized R units** with per-pattern win rate, profit factor and drawdown. They are **not hypothetical option premiums**, rupee trading returns, broker-executable index orders, or a credit-spread backtest. This is an appropriate first diagnostic of signal quality before later testing the additional option Greeks, IV/expiry, fees, fill uncertainty and hedged margin mechanics. An annual result must be compared out-of-sample to avoid overfitting pattern definitions.
+
 ## Three-way opening-range strategy (new advanced mode only)
 
 The reference window is exactly **09:15–09:30 IST** (three completed 5-minute candles), and all classification is made from completed 5-minute bars with a 90-second freshness check; no historical future candles or intrabar breakouts. Both index direction and option side follow the signal:
