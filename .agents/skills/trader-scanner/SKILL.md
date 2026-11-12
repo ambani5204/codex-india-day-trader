@@ -40,6 +40,12 @@ If the user has a valid Upstox OAuth token, the non-Kite path is `python tools/i
 
 ## Full-day India options skill relationship
 
-Experimental all-day scanning of completed Upstox 5-minute NIFTY/SENSEX candles adds ORB, EMA cross, and mean reversion. No lookahead; no guaranteed signals.
+The advanced scanner (distinct from the legacy `scan` command) now explicitly detects three opening-range event types from **only fully closed** 5-minute Upstox candles:
+
+1. **BREAKOUT**: first bar closes past the 09:15–09:30 high/low plus a small buffer. Above high = BULL, below low = BEAR.
+2. **FAKEOUT**: wick sweeps high/low but closes inside the range with a rejection candle and no prior breakout close. Upper sweep = BEAR, lower sweep = BULL.
+3. **TRAP**: one to three *earlier* candles actually CLOSED outside the range; the newest bar closes back inside, reversing direction and trapping prior breakout participants. A long trend that has lasted four or more closes outside is **not** labeled a fresh trap.
+
+The result includes `range_pattern`, `failed_breakout_side`, `sweep_extreme`, `breakout_level`, `bar` and `confirmed_at` when applicable. One candle cannot be simultaneously a fakeout and a trap. EMA crossover and restrained 20-bar mean reversion still run after range checks through 14:40 IST. This is signal detection, not any guarantee of entry or profitability.
 
 See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
