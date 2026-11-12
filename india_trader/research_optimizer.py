@@ -107,7 +107,15 @@ def _performance(trades):
         equity+=v
         peak=max(peak,equity)
         dd=min(dd,equity-peak)
+    gross_total_r=sum(float(t['realized_r']) for t in trades)
+    fee_total_r=sum(t['futures_proxy_charges_inr']/
+                    (t['risk_points']*t['futures_proxy_lot']) for t in trades)
     return {'trades':n,'net_win_rate_pct':round(100*winners/n,2) if n else None,
+            'gross_total_r':round(gross_total_r,4),
+            'fee_drag_total_r':round(fee_total_r,4),
+            'average_fee_drag_r':round(fee_total_r/n,5) if n else None,
+            'estimated_futures_proxy_gross_inr':round(
+                sum(t['index_points']*t['futures_proxy_lot'] for t in trades),2),
             'net_total_r':round(sum(profits),4),
             'net_avg_r':round(sum(profits)/n,5) if n else None,
             'net_profit_factor':(round(gross_gain/gross_loss,4)
@@ -146,6 +154,41 @@ def _candidate_params(max_configs):
         })
     # Exactly 96 candidates, fixed for comparable reruns.
     return generated[:max_configs]
+
+
+def simple_playbook_presets():
+    """FOUR predetermined research hypotheses, not tuned to a past holdout.
+
+    Single ORB and EMA strategies only. A maximum ONE position per day;
+    no traps, fakeouts, mean-reversion or automatic options activity.
+    """
+    base={'min_open_range_to_bar_range':1.0,
+          'regime_lookback':8,
+          'require_ema_alignment':True,
+          'max_trades_per_day':1,
+          'max_fee_r':0.25}
+    return [
+      {'name':'ORB_TREND_1_5R',**base,
+       'strategies':('OPENING_RANGE_BREAKOUT',),
+       'min_efficiency_ratio':.25,'min_trend_candle_body':.55,
+       'trend_target_r':1.5,'min_chart_rr':1.5,
+       'latest_signal_time':'10:45:00'},
+      {'name':'ORB_TREND_2R',**base,
+       'strategies':('OPENING_RANGE_BREAKOUT',),
+       'min_efficiency_ratio':.25,'min_trend_candle_body':.55,
+       'trend_target_r':2.0,'min_chart_rr':1.5,
+       'latest_signal_time':'10:45:00'},
+      {'name':'EMA_TREND_1_5R',**base,
+       'strategies':('EMA_8_21_CROSS',),
+       'min_efficiency_ratio':.35,'min_trend_candle_body':.45,
+       'trend_target_r':1.5,'min_chart_rr':1.5,
+       'latest_signal_time':'13:30:00'},
+      {'name':'EMA_TREND_2R',**base,
+       'strategies':('EMA_8_21_CROSS',),
+       'min_efficiency_ratio':.35,'min_trend_candle_body':.45,
+       'trend_target_r':2.0,'min_chart_rr':1.5,
+       'latest_signal_time':'13:30:00'},
+    ]
 
 
 def _period_days(all_days):
@@ -234,6 +277,106 @@ def _replay_subset(sessions,days,policy,slippage):
     return {'metrics':_performance(trades),'excluded':dict(excluded),
             'rejections':dict(rejection),'signals':signals,
             'trades':trades}
+
+
+def run_simple_edge_research(start,end,market='AUTO',reader=None,
+                             cache_dir='trader/backtest_cache',out=None,
+                             slippage_points=1.0,min_train=24,
+                             min_validation=10,min_holdout=10):
+    """A small four-rule gate, *not* a historical-profit finding machine.
+
+    Keep the final block for one candidate chosen on training/validation.
+    Reusing previously inspected 2025–2026 dates does not make that final
+    portion independently out of sample; only subsequent unseen sessions
+    and actual tradable quotes can provide forward evidence.
+    """
+    if isinstance(start,str):start=dt.date.fromisoformat(start)
+    if isinstance(end,str):end=dt.date.fromisoformat(end)
+    if start>end or (end-start).days>730 or end>=dt.datetime.now(IST).date():
+        raise ValueError('Historical dates must be completed and <=2 years')
+    market=market.upper()
+    if market not in ('AUTO','NIFTY','SENSEX','BOTH'):
+        raise ValueError('Unsupported market')
+    if not math.isfinite(slippage_points) or not 0<=slippage_points<=10:
+        raise ValueError('Slippage must be 0–10 hypothetical index points')
+    if any(not isinstance(v,int) or v<1 for v in
+           (min_train,min_validation,min_holdout)):
+        raise ValueError('Positive minimum sample counts required')
+    reader=reader or _LazyHistoricalReader()
+    sessions=_load_sessions(start,end,market,reader,cache_dir)
+    splits=_period_days(set(x['day'] for x in sessions))
+    results=[]
+    qualified=[]
+    for policy in simple_playbook_presets():
+        train=_replay_subset(sessions,splits['TRAIN'],policy,slippage_points)
+        validation=_replay_subset(sessions,splits['VALIDATION'],policy,slippage_points)
+        train_pass=_eligible(train['metrics'],min_train,profit_factor=1.10)
+        valid_pass=_eligible(validation['metrics'],min_validation,
+                            profit_factor=1.10)
+        row={'playbook':policy['name'],
+             'settings':{k:list(v) if isinstance(v,tuple) else v
+                         for k,v in policy.items()},
+             'train':train['metrics'],'validation':validation['metrics'],
+             'train_rejections':train['rejections'],
+             'validation_rejections':validation['rejections'],
+             'passed_train':train_pass,'passed_validation':valid_pass,
+             'eligible_for_holdout':train_pass and valid_pass}
+        results.append(row)
+        if train_pass and valid_pass:
+            # Only pre-holdout performance can influence selection.
+            score=min(train['metrics']['net_avg_r'],
+                      validation['metrics']['net_avg_r'])
+            qualified.append((score,row,policy))
+        print('Simple research:',policy['name'],
+              'train',train['metrics']['trades'],
+              'validation',validation['metrics']['trades'],
+              'passed' if train_pass and valid_pass else 'failed',
+              flush=True)
+    chosen=None
+    held=None
+    stress=None
+    if qualified:
+        _,chosen,selected_policy=max(qualified,key=lambda item:item[0])
+        held=_replay_subset(sessions,splits['HOLDOUT'],
+                            selected_policy,slippage_points)['metrics']
+        stressed=_replay_subset(sessions,splits['HOLDOUT'],
+                       selected_policy,max(2.0,slippage_points*2))['metrics']
+        stress=stressed
+        ok=_eligible(held,min_holdout,profit_factor=1.10) and _eligible(
+            stressed,min_holdout,profit_factor=1.10)
+        status=('SIMPLE_PROXY_GATES_PASSED_NOT_REAL_TRADING_PROOF' if ok
+                else 'SIMPLE_HOLDOUT_OR_STRESS_FAILED')
+    else:
+        status='NO_SIMPLE_STRATEGY_PASSED_VALIDATION'
+    result={
+      'kind':'SIMPLE_TWO_STRATEGY_RESEARCH_WITH_ESTIMATED_FUTURES_FEES',
+      'status':status,'from_date':start.isoformat(),'to_date':end.isoformat(),
+      'market':market,'precommitted_configurations':len(results),
+      'rules':'Opening-range breakout OR EMA 8/21, one chart trade per day; no sideways entries when recent efficiency is too low; exclude if expected transaction cost >25% of stop risk',
+      'splits':{k:{'start':min(v).isoformat(),'end':max(v).isoformat(),
+                    'weekday_dates':len(v)} for k,v in splits.items()},
+      'results':results,
+      'selected_before_holdout':chosen,
+      'final_holdout':held,'final_holdout_double_slippage':stress,
+      'requirements':{'min_train_trades':min_train,
+                      'min_validation_trades':min_validation,
+                      'min_holdout_trades':min_holdout,
+                      'min_fee_adjusted_profit_factor':1.10,
+                      'positive_net_avg_r':True,
+                      'max_fee_fraction_of_risk':0.25,
+                      'max_one_trade_per_day':True},
+      'safe_to_scale':False,'safe_to_deploy_automatically':False,
+      'actual_futures_or_options_profit_inr':None,
+      'warning':'Only spot INDEX chart trades with a dated FUTURES-cost proxy. Already-inspected 2025-26 dates are NOT pristine out-of-sample data. Cannot establish actual futures/options fills, after-income-tax profitability, liquidity at greater lots or safe capital scaling. Never auto-deploy.',
+    }
+    if out:
+        path=Path(out)
+        path.parent.mkdir(parents=True,exist_ok=True)
+        tmp=path.with_suffix('.tmp')
+        tmp.write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n',
+                       encoding='utf-8')
+        tmp.replace(path)
+    return result
 
 
 def run_walk_forward_research(start,end,market='AUTO',reader=None,
