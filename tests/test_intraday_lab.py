@@ -21,7 +21,7 @@ def opt(typ,key,delta,bid,ask):
 def chain_and_master():
     expiry='2026-11-12'
     records=[];chain=[]
-    for strike,delta,bid,ask in ((90,-.25,7,7.5),(85,-.08,3,3.5),(80,-.03,1,1.5)):
+    for strike,delta,bid,ask in ((90,-.25,7,7.08),(85,-.08,3,3.04),(80,-.03,1,1.01)):
         key=f'BSE_FO|{strike}P'
         records.append({'segment':'BSE_FO','instrument_type':'PE',
                         'underlying_symbol':'SENSEX','instrument_key':key,
@@ -81,7 +81,7 @@ class SpreadRiskTests(unittest.TestCase):
         p=select_credit_spread(self.master,self.chain,'SENSEX','BULL',100,
                                self.day,self.settings,expiry='2026-11-12')
         broken=[dict(self.chain[0],put_options=dict(self.chain[0]['put_options'],
-             market_data={'bid_price':7,'ask_price':7.5,'bid_qty':0,'ask_qty':0})),
+             market_data={'bid_price':7,'ask_price':7.08,'bid_qty':0,'ask_qty':0})),
              *self.chain[1:]]
         with self.assertRaises(UpstoxError):
             spread_mark(p,broken,'SENSEX',dt.datetime(2026,11,12,14,45,tzinfo=IST))
