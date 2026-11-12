@@ -194,6 +194,8 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
         raise UpstoxError('Minimum credit spread reward:risk cannot be negative')
     allocation=float(settings['capital_inr'])*float(settings['max_allocation_fraction'])
     ranked=[]
+    blocked={'expiry_risk_above_cap':0,'credit_stop_above_cap':0,
+             'target_profit_or_rr_too_low':0,'missing_valid_wing_or_credit':0}
     for short in rows:
         if not (.12 <= abs(short['leg']['delta']) <= .40):
             continue
@@ -204,9 +206,11 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
                 continue
             width=(short['strike']-hedge['strike']) if side=='put' else (hedge['strike']-short['strike'])
             if not (0 < width <= 200):  # capped wing distance, not unlimited
+                blocked['missing_valid_wing_or_credit']+=1
                 continue
             credit=short['leg']['bid']-hedge['leg']['ask']
             if credit<=0:
+                blocked['missing_valid_wing_or_credit']+=1
                 continue
             qty=short['qty']
             max_expiry_loss=(width-credit)*qty
@@ -217,6 +221,7 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
                              qty,exchange)
             risk=money(max_expiry_loss+est_fees)
             if risk>cap or width*qty>allocation:
+                blocked['expiry_risk_above_cap']+=1
                 continue
             target_debit=max(.01,credit*.4)
             stop_debit=credit*2
@@ -230,9 +235,11 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
             # The planned close debit can exceed theoretical expiry payoff:
             # BOTH losses must fit the same hard *modeled* INR risk cap.
             if stop_net_loss>cap:
+                blocked['credit_stop_above_cap']+=1
                 continue
             planned_rr=(target_net/stop_net_loss) if stop_net_loss>0 else 0
             if min_reward_risk>0 and (target_net<=0 or planned_rr<min_reward_risk):
+                blocked['target_profit_or_rr_too_low']+=1
                 continue
             ranked.append((abs(short['leg']['delta']-expected_delta), width, -credit,
                            {'market':market,'strategy':'DEFINED_RISK_CREDIT_SPREAD',
@@ -252,7 +259,11 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
                             'margin_not_verified':True,'executable_fill_not_guaranteed':True,
                             'source':'UPSTOX_REST_OPTION_CHAIN_PAPER'}))
     if not ranked:
-        raise UpstoxError('No defined-risk credit spread fits risk, premium, delta and liquidity limits')
+        counts=', '.join(f'{key}={value}' for key,value in blocked.items() if value)
+        raise UpstoxError('No defined-risk credit spread passed. '
+                          'Matching liquid OTM legs='+str(len(rows))+
+                          '; cap=₹'+f'{cap:.2f}'+
+                          '; rejections: '+(counts or 'no matching executable hedge pair'))
     return min(ranked,key=lambda e:e[:3])[3]
 
 
