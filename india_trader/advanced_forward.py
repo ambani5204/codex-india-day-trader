@@ -290,6 +290,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                 'strategy':signal['strategy'],'trade_structure':kind,
                                 'atm_iv_pct':round(iv,2),
                                 'iv_threshold_pct':args.credit_iv_threshold})
+                        fallback_from_credit=False
                         if kind=='CREDIT':
                             try:
                                 if dt.date.fromisoformat(expiry)==today and now.time()>dt.time(13,45):
@@ -313,6 +314,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                         'fallback':'TRY_NON_EXPIRING_LONG_OPTION',
                                         'note':'Fallback does not waive any risk, IV or liquidity requirement'})
                                 kind='LONG'
+                                fallback_from_credit=True
                             else:
                                 # Quote-based paper execution, not guaranteed
                                 # simultaneous hedge fills or verified margin.
@@ -350,7 +352,8 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                 engine=None
                                 raise UpstoxError('Long option entry not permitted by quote/timing guards')
                             record({'event':'OPTION_SELECTION','timestamp':now.isoformat(),
-                                    'contract':contract})
+                                    'contract':contract,
+                                    'fallback_from_credit':fallback_from_credit})
                             record(result)
                             pos={'kind':'LONG','contract':contract}
                         cooldown_until=now+dt.timedelta(minutes=args.cooldown_minutes)
