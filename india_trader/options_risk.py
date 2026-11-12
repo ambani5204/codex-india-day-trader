@@ -136,6 +136,49 @@ def index_stop_plan(bars,signal,spot,now,atr_multiplier=1.5):
         # It is a hypothetical projection, not an expected market move.
         target_basis='ORB_2R_PROJECTION'
         target=None
+    elif strategy in ('OPENING_RANGE_FAKEOUT','OPENING_RANGE_TRAP'):
+        # These are opposite-direction range trades. Do NOT reuse the ORB
+        # continuation stop: invalidation lies beyond the swept extreme.
+        opening=[b for b in completed if b.time.time() in
+                 (dt.time(9,15),dt.time(9,20),dt.time(9,25))]
+        if [b.time.time() for b in opening]!=[
+                dt.time(9,15),dt.time(9,20),dt.time(9,25)]:
+            raise UpstoxError('Opening range incomplete for reversal stop')
+        high=max(b.high for b in opening)
+        low=min(b.low for b in opening)
+        width=high-low
+        if width<=0:
+            raise UpstoxError('Cannot plan stop from zero-width opening range')
+        typical=median(b.high-b.low for b in opening)
+        buffer=max(.1*width,.2*typical)
+        failed_side=signal.get('failed_breakout_side')
+        if failed_side not in ('UP','DOWN'):
+            raise UpstoxError('Reversal stop requires documented swept opening-range side')
+        if (failed_side=='UP' and side!='BEAR') or (
+            failed_side=='DOWN' and side!='BULL'):
+            raise UpstoxError('Reversal direction contradicts failed breakout side')
+        extreme=float(signal.get('sweep_extreme',float('nan')))
+        if not math.isfinite(extreme):
+            raise UpstoxError('Reversal stop missing confirmed sweep extreme')
+        if side=='BEAR':
+            if extreme<=high:
+                raise UpstoxError('Missing verified upper-side sweep')
+            stop=extreme+buffer
+        else:
+            if extreme>=low:
+                raise UpstoxError('Missing verified lower-side sweep')
+            stop=extreme-buffer
+        if stop<=0:
+            raise UpstoxError('Reversal stop must be positive')
+        if strategy=='OPENING_RANGE_FAKEOUT':
+            target=(high+low)/2
+            basis='OR_FAKEOUT_BEYOND_WICK_SWEEP'
+            target_basis='OR_FAKEOUT_RANGE_MIDPOINT'
+        else:
+            target=low if side=='BEAR' else high
+            basis='OR_TRAP_BEYOND_FAILED_BREAKOUT_EXTREME'
+            target_basis='OR_TRAP_OPPOSITE_RANGE_BOUNDARY'
+        atr=atr_5m(completed) if len(completed)>=15 else None
     elif strategy=='EMA_8_21_CROSS':
         atr=atr_5m(completed)
         recent=completed[-6:]
