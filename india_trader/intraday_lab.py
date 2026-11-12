@@ -165,7 +165,7 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
             leg=_liquid_leg(row,side,qty,max_spread_pct)
             if not leg:
                 continue
-            if not (.12 <= abs(leg['delta']) <= .40):
+            if not (.01 <= abs(leg['delta']) <= .40):
                 continue
             if side=='put' and not (leg['delta']<0 and strike<spot):
                 continue
@@ -180,8 +180,12 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
     allocation=float(settings['capital_inr'])*float(settings['max_allocation_fraction'])
     ranked=[]
     for short in rows:
+        if not (.12 <= abs(short['leg']['delta']) <= .40):
+            continue
         for hedge in rows:
             if short is hedge or short['expiry']!=hedge['expiry'] or short['lot']!=hedge['lot']:
+                continue
+            if abs(hedge['leg']['delta']) >= abs(short['leg']['delta']):
                 continue
             width=(short['strike']-hedge['strike']) if side=='put' else (hedge['strike']-short['strike'])
             if not (0 < width <= 200):  # capped wing distance, not unlimited
