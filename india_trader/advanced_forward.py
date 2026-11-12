@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .core import IST, parse_time
 from .intraday_lab import intraday_signal, select_credit_spread, spread_mark
-from .options_risk import index_stop_plan, select_long_risk_managed
+from .options_risk import index_stop_plan, select_long_risk_managed, adaptive_paper_risk
 from .paper_sim import PaperEngine, journal_write
 from .upstox import (INDICES, UpstoxReader, UpstoxError,
                      load_today_master, select_atm, select_delta_contract,
@@ -124,6 +124,8 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
         raise UpstoxError('Start between 09:15 and 15:10 IST on a weekday')
     if args.poll_seconds<10:
         raise UpstoxError('Advanced REST chain polling must be >= 10 seconds')
+    # Validate the advanced-only risk percent even when the day has no signal.
+    adaptive_paper_risk(settings)
     today=now.date()
     records=load_today_master(args.master,today)
     folder=Path(args.directory)
@@ -144,7 +146,9 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
     def record(event):
         journal_write(jpath,{**session,**event})
     record({'event':'SESSION_START','timestamp':now.isoformat(),
-            'capital':settings['capital_inr'],'max_loss_per_trade':settings['max_loss_per_trade_inr'],
+            'capital':settings['capital_inr'],
+            'legacy_fixed_trade_limit_inr':settings.get('max_loss_per_trade_inr'),
+            'advanced_risk_percent':settings.get('advanced_risk_percent',1.0),
             'prior_sessions':prior['prior_session_count'],
             'prior_closed_trades':prior['closed_trades'],
             'prior_cumulative_loss_inr':prior['loss_consumed_inr'],
@@ -271,12 +275,17 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                         if iv is None:
                             raise UpstoxError('No reliable IV; no paper entry')
                         kind='CREDIT' if iv>=args.credit_iv_threshold else 'LONG'
-                        remaining=float(settings['max_daily_loss_inr'])-prior_consumed-loss_consumed
+                        budget=adaptive_paper_risk(
+                            settings,realized_net=prior_net+net,
+                            realized_losses=prior_consumed+loss_consumed)
+                        remaining=budget['remaining_daily_loss_inr']
+                        effective_settings={**settings,'max_loss_per_trade_inr':budget['trade_risk_cap_inr']}
                         stop_plan=index_stop_plan(bars,signal,last.close,now)
                         record({'event':'RISK_PLAN','timestamp':now.isoformat(),
                                 'index_stop_plan':stop_plan,
-                                'remaining_daily_risk_inr':round(remaining,2),
-                                'max_trade_loss_inr':settings['max_loss_per_trade_inr']})
+                                'risk_budget':budget,
+                                'remaining_daily_risk_inr':remaining,
+                                'max_trade_loss_inr':budget['trade_risk_cap_inr']})
                         record({'event':'STRATEGY_DECISION','timestamp':now.isoformat(),
                                 'strategy':signal['strategy'],'trade_structure':kind,
                                 'atm_iv_pct':round(iv,2),
@@ -285,7 +294,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                             if dt.date.fromisoformat(expiry)==today and now.time()>dt.time(13,45):
                                 raise UpstoxError('No new expiry-day short spreads after 13:45 IST')
                             selection=select_credit_spread(records,chain,args.market,signal['direction'],
-                                                           last.close,today,settings,expiry=expiry,
+                                                           last.close,today,effective_settings,expiry=expiry,
                                                            remaining_daily_loss=remaining,
                                                            min_reward_risk=.25,index_stop_plan=stop_plan)
                             # Assume both legs fill at visible bid/ask instantaneously:
@@ -303,14 +312,14 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                                     last.close,today)
                             chain_l=api.option_chain(INDICES[args.market],preferred['expiry'])
                             contract=select_long_risk_managed(records,chain_l,args.market,
-                                      signal['direction'],last.close,today,settings,
+                                      signal['direction'],last.close,today,effective_settings,
                                       stop_plan,preferred['expiry'],target_pct=30,
                                       min_rr=1.5,max_lots=3,
                                       remaining_daily_loss=remaining)
                             risk_plan=contract['risk_plan']
                             qty=risk_plan['quantity']
                             engine=PaperEngine(contract['symbol'],qty,settings['capital_inr'],
-                                  settings['max_loss_per_trade_inr'],
+                                  budget['trade_risk_cap_inr'],
                                   max_allocation_fraction=settings['max_allocation_fraction'],
                                   fee_profile='UPSTOX',flat_by=dt.time(15,10),
                                   planned_stop=risk_plan['stop_bid'],
