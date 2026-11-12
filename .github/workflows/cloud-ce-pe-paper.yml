@@ -1,0 +1,46 @@
+name: Cloud CE-PE live paper trading (NO REAL ORDERS)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:55 UTC = 09:25 IST, weekdays. Scheduled starts can be delayed.
+    - cron: "55 3 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-ce-pe-paper-session
+  cancel-in-progress: false
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 359
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Offline safety and unit tests
+        run: python -m unittest discover -s tests -q
+      - name: Run live option-quote CE/PE paper session (read only)
+        id: session
+        continue-on-error: true
+        run: python -m deploy.cloud_paper_session
+      - name: Publish ONLY public-safe aggregate (never raw quotes/journals)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-safe-ce-pe-summary-${{ github.run_id }}
+          path: trader/cloud_paper_summary.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Fail visibly when session failed or was incomplete
+        if: steps.session.outcome != 'success'
+        run: |
+          echo "Cloud paper session failed or incomplete. See aggregate diagnostics."
+          exit 1
