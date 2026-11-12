@@ -22,12 +22,14 @@ def diagnose_paper_sessions(directory, day, market):
              'signals':0,'signals_by_strategy':{},'risk_plans':0,
              'credit_spread_opens':0,'long_option_fills':0,'closed_trades':0,
              'net_realized_paper_pnl':0.,'pending_or_unresolved_sessions':0,
+             'market_data_errors':0,'recent_market_data_errors':[],
              'rejections':[],'recent_risk_plans':[],
              'message':'No matching paper journal files' if not files else
                        'Events are simulated. No broker orders were placed.'}
     types=Counter()
     rejects=Counter()
     plans=[]
+    errors=[]
     unresolved=0
     pnl=0.0
     for file in files:
@@ -60,6 +62,9 @@ def diagnose_paper_sessions(directory, day, market):
             elif name in ('SIGNAL_REJECTED','CONTRACT_FILTER_BLOCKED'):
                 reason=event.get('message') or event.get('reason') or 'UNKNOWN'
                 rejects[str(reason)[:500]]+=1
+            elif name=='MARKET_DATA_ERROR':
+                errors.append({'timestamp':event.get('timestamp'),
+                               'message':str(event.get('message','UNKNOWN'))[:300]})
             elif name=='PAPER_SPREAD_OPEN':
                 summary['credit_spread_opens']+=1
             elif name=='PAPER_BUY_FILLED':
@@ -74,4 +79,6 @@ def diagnose_paper_sessions(directory, day, market):
     summary['net_realized_paper_pnl']=round(pnl,2)
     summary['pending_or_unresolved_sessions']=unresolved
     summary['rejections']=[{'count':count,'reason':reason} for reason,count in rejects.most_common(12)]
+    summary['market_data_errors']=len(errors)
+    summary['recent_market_data_errors']=errors[-5:]
     return summary
