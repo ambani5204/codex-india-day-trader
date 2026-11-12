@@ -45,7 +45,7 @@ def _chain_iv(chain,spot,direction):
     try:
         nearest=min(chain,key=lambda row:abs(float(row['strike_price'])-spot))
         value=float((nearest.get(side) or {}).get('option_greeks',{}).get('iv'))
-        if 0 < value < 5:
+        if 0 < value <= 1:
             value*=100  # fractional IV (provider convention can differ)
         return value if 0 < value <= 500 else None
     except (ValueError,TypeError,KeyError,AttributeError):
@@ -108,7 +108,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                     'sell_price':pos['contract']['short_bid'],
                                     'quantity':pos['contract']['quantity'],
                                     'gross_pnl':round(mark['net_pnl']+mark['fees'],2),
-                                    'fees':{'total':mark['fees'],'broker_profile':'UPSTOX'},
+                                    'fees':mark['fees_breakdown'],
                                     'net_pnl':mark['net_pnl'],'reason':mark['reason'],
                                     'short_strike':pos['contract']['short_strike'],
                                     'long_strike':pos['contract']['long_strike'],
