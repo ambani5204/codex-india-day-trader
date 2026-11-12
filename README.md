@@ -6,6 +6,26 @@ This project adapts the 11 skill *roles* from [Jakeschincariol/day-trader-skill]
 
 It is intended for **educational analysis** and controlled manual/paper workflows, not guaranteed profitability. Historical tests have lookahead and selection-bias risk unless verified against accurate, timestamped, independently collected market data.
 
+## Historical replay: 1 October 2025 – 1 October 2026
+
+On Android Termux **outside market hours**:
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+bash backtest-year.sh
+```
+
+This command loads the **saved private Upstox Analytics Token** and fetches actual V3 historical 5-minute NIFTY/SENSEX index candles in short API date chunks. Data is cached in `trader/backtest_cache` for reproducibility, and a full JSON signal report is saved to `trader/backtests/index_signals_2025-10-01_to_2026-10-01.json`. The final terminal message includes the candidate-signal counts, days with missing/incomplete candles and per-strategy breakdown.
+
+The replay calls **the same** `india_trader.intraday_lab.intraday_signal` function used by the experimental `paper-advanced` session. It follows the weekday schedule Mon/Tue/Fri NIFTY, Wed/Thu SENSEX and uses only fully closed 5-minute candles available at each historical instant. If essential historical candles are missing, days are flagged rather than filled with fictitious data.
+
+**Important: This is NOT an options P&L backtest and does not calculate a win rate.** Historical index candles cannot reconstruct option deltas, IV, bid-ask spread, executable order-book depth, strikes, expiries and both legs of a sold credit spread. Likewise it does not model the actual open-position cooldown or capital usage, so candidate signals are not executed trades. The precise real-time buying/selling selection engine cannot be replayed without market-time option-chain snapshots that standard historical index candles do not supply.
+
+Upstox's **Expired Instruments API** can retrieve past option OHLC, but is plan-gated (Upstox Plus); historical OHLC alone is still not an actual bid/ask/Greeks snapshot. A full *approximate* options backtest would need an independently verified historical options dataset and explicit fill/Greek/IV estimation assumptions; it must be labeled approximate, not "same exact fills." Never report fabricated historical option profits.
+
+Official historical API docs: https://upstox.com/developer/api-documentation/v3/get-historical-candle-data/ and https://upstox.com/developer/api-documentation/get-expired-historical-candle-data/
+
 ## EXPERIMENTAL: All-session options paper trading (buy and hedged sell)
 
 This new option is **not the default**: the older ORB-only system is retained unchanged unless you opt in.
