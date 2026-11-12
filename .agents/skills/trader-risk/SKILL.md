@@ -36,6 +36,6 @@ The other ten folders in `.agents/skills/` cover scan → entry → exit → tim
 
 ## Full-day India options skill relationship
 
-Experimental engine keeps original paper trade/day risk caps and rejects naked short options, invalid liquidity and unresolved prior sessions. Spread margin/settlement are not broker verified.
+Advanced paper mode is **risk first, not frequency first**: equity risk fraction defaults to 1.0% (configurable 0.1–1.0%), with a separate daily INR loss budget of ₹1,500, maximum three closed paper trades and a 15-minute cooldown. It rejects non-expiring long options with insufficient net R:R and hedged short structures whose maximum expiry payoff risk OR modeled credit-stop loss exceeds the remaining cap. Expiry-day new short spreads are cut off at 13:45 IST, with a hypothetical 14:45 exit and no naked option selling. Do not loosen market risk just to increase signals, and do not treat quote-based stops as exchange-guaranteed orders.
 
 See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
