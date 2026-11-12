@@ -6,6 +6,43 @@ This project adapts the 11 skill *roles* from [Jakeschincariol/day-trader-skill]
 
 It is intended for **educational analysis** and controlled manual/paper workflows, not guaranteed profitability. Historical tests have lookahead and selection-bias risk unless verified against accurate, timestamped, independently collected market data.
 
+## Research engine: trend, sideways, multiple R:R and transaction-tax sensitivity
+
+The original one-year chart test (1 Oct 2025–1 Oct 2026) returned **602 paper index-point trades, a 32.23% win rate, −39.92R and 0.90 gross R profit factor**. It was **negative even before any tradable-instrument fees**. This is the BASELINE, not evidence of a profitable strategy. The new **standalone research optimizer** does not modify the saved paper-trading engine or automatically deploy new parameters.
+
+From Android Termux with the historical index 5-minute candle cache already downloaded:
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+bash research-index-year.sh
+```
+
+Or run a shorter bounded smoke test:
+
+```bash
+python tools/india.py research-index-walk-forward \
+  --from-date 2025-10-01 --to-date 2026-10-01 \
+  --market AUTO --max-configs 12 --slippage-points 1 \
+  --out trader/backtests/index_research_smoke.json
+```
+
+The full local run evaluates **at most 96 predefined configurations**, spanning strategy baskets (all signals, directional, breakout+EMA, EMA alone), efficient versus choppy index-price movement, strong directional candle body, and **1.5R / 2R / 2.5R trend targets** with **minimum 1.2 or 1.5 chart R:R**. Opening-range width is also checked against bar ranges. These are based **only on candles known as of signal confirmation**. There is no look-ahead day label such as "this day eventually became sideways." A sideways day may be identified too late to prevent its first trade; this cannot be known ahead of time.
+
+The optimizer uses a **chronological 60% training / 20% validation / 20% final holdout split**, a one-index-point-per-side adverse **hypothetical slippage assumption**, a maximum of three chart trades per day, stop-first resolution when a candle hits both stop and target, and a **historically dated futures-style transaction COST PROXY** including brokerage, STT, GST, SEBI charges, stamp duty, exchange and IPFT. The futures STT sell-side rate is **0.02% through 31 Mar 2026 and 0.05% from 1 Apr 2026**. NIFTY lot size changes are approximated 75→65 from January 2026, SENSEX 20; these are **not historical contract-by-contract fills**. Sources: [NSE futures STT](https://www.nseindia.com/static/products-services/equity-derivatives-securities-transaction-tax), [Upstox brokerage/charges](https://upstox.com/brokerage-charges/), [NIFTY lot circular](https://nsearchives.nseindia.com/content/circulars/FAOP70616.pdf).
+
+Every candidate must satisfy **positive estimated net average R, estimated net profit factor ≥1.05, sufficient training/validation observations, and drawdown gates**, and the *selected* candidate must also pass the held-out segment and **2 points of adverse slippage per side** stress. If no candidate passes, the correct result is **`NO_CANDIDATE_PASSED_TRAIN_AND_VALIDATION`**, never a manufactured winning parameter set. Other possible status: `HOLDOUT_OR_SLIPPAGE_STRESS_FAILED`; a passed gate is `RESEARCH_GATE_PASSED_HYPOTHETICAL_PROXY_ONLY`, not proof of profitable execution or permission to deploy. Historical re-optimization on the same dates can overfit even these gates.
+
+**Cost-model limitation:** A NIFTY/SENSEX spot index cannot be traded. Its OHLC is not futures OHLC, so modeling *futures-like* fees using spot prices cannot establish actual futures **or options** after-fee profit. Real futures basis, bid-ask, margin/funding costs, historical active-contract lot changes, market impact, and **personal income tax** are not validated; these charges are only explicit sensitivity estimates.
+
+### Nightly event on GitHub Actions
+
+The repository now contains [`nightly-index-strategy-research.yml`](.github/workflows/nightly-index-strategy-research.yml), scheduled **weekdays at 23:00 IST** (GitHub's actual start may be delayed), plus an on-demand Actions button. Each run first runs the unit tests, restores cached public index candles, and performs a **finite** 96-configuration research check using a rolling two-year maximum period ending on the **last completed calendar day**. It publishes a JSON report under that GitHub Actions run's **Artifacts** and shows its result in the GitHub job summary.
+
+**One required external setup:** In your repository's **Settings → Secrets and variables → Actions → New repository secret**, add `UPSTOX_ACCESS_TOKEN` with a valid market-data token. **Do not send this token in chat or commit it to GitHub.** Your private Termux token cannot be transferred automatically into GitHub Actions. If the secret is absent, the scheduled job writes `NOT_RUN_MISSING_UPSTOX_ACCESS_TOKEN` rather than making up results. Tokens may expire and need secure renewal; GitHub runners cannot use the private Termux token without configuration.
+
+The nightly event **never** changes `PAPER_MODE`, stop-loss, daily risk, active positions, or actual broker orders. It will not run forever inside one job, and it will not keep curve-fitting until history appears profitable. Repeated nightly tests are only ongoing monitoring, not independent statistical evidence if the same historical holdout is reused.
+
 ## Index-only intraday strategy test — NO options or put/call
 
 Use this when you want to validate whether the three opening-range patterns (BREAKOUT, FAKEOUT, TRAP) and the unchanged EMA/mean-reversion setups have predictive value **on the 5-minute NIFTY/SENSEX chart itself**, without option chains, expiry selection, theta, spreads, Greeks, or broker orders.
