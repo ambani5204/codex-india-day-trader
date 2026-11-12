@@ -9,12 +9,13 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+from statistics import median
 from collections import Counter, defaultdict
 from pathlib import Path
 
 from .core import IST
 from .historical_backtest import load_historical_index, replay_signal_day
-from .intraday_lab import intraday_signal
+from .intraday_lab import intraday_signal, ema
 from .options_risk import index_stop_plan
 from .schedule import market_for_day
 from .upstox import UpstoxReader, UpstoxError
@@ -89,8 +90,73 @@ def _exit_price(position,bar,slippage_points):
     return None
 
 
+def _policy_signal_guard(closed,signal,policy):
+    """Real-time-only market regime gate; no end-of-day labels or future bars.
+
+    Efficiency ratio (Kaufman-style) is low when prices are choppy and high
+    for a directional move. Opening range width and candle body are additional
+    early-session filters, because ADX/slow EMAs are not yet available at 09:35.
+    """
+    if not policy:
+        return None
+    enabled=policy.get('strategies')
+    if enabled is not None and signal['strategy'] not in enabled:
+        return 'STRATEGY_DISABLED_IN_RESEARCH'
+    lookback=int(policy.get('regime_lookback',8))
+    threshold=float(policy.get('min_efficiency_ratio',0))
+    if not 0<=threshold<=1 or lookback<3 or lookback>40:
+        raise ValueError('Invalid regime research parameters')
+    prices=[b.close for b in closed]
+    n=min(lookback,len(prices)-1)
+    if n<3:
+        return 'REGIME_INSUFFICIENT_HISTORY'
+    changes=[abs(prices[j]-prices[j-1])
+             for j in range(len(prices)-n,len(prices))]
+    travel=sum(changes)
+    efficiency=abs(prices[-1]-prices[-n-1])/travel if travel>0 else 0
+    if efficiency<threshold:
+        return 'SIDEWAYS_EFFICIENCY_RATIO'
+    opening=[b for b in closed if b.time.time() in
+             (dt.time(9,15),dt.time(9,20),dt.time(9,25))]
+    if len(opening)==3:
+        typical=median(x.high-x.low for x in opening)
+        ratio=(max(x.high for x in opening)-min(x.low for x in opening))/typical if typical>0 else 0
+        if ratio<float(policy.get('min_open_range_to_bar_range',0)):
+            return 'OPENING_RANGE_TOO_COMPRESSED'
+    if signal['strategy'] in ('OPENING_RANGE_BREAKOUT','EMA_8_21_CROSS'):
+        last=closed[-1]
+        body=abs(last.close-last.open)/(last.high-last.low) if last.high>last.low else 0
+        if body<float(policy.get('min_trend_candle_body',0)):
+            return 'WEAK_DIRECTIONAL_CANDLE'
+    if policy.get('require_ema_alignment') and len(prices)>=21:
+        fast=ema(prices,8)
+        slow=ema(prices,21)
+        if (signal['direction']=='BULL' and fast<=slow) or (
+            signal['direction']=='BEAR' and fast>=slow):
+            return 'AGAINST_CURRENT_EMA_TREND'
+    return None
+
+
+def _policy_adjust_target(plan,signal,spot,policy):
+    if not policy:
+        return plan
+    multiplier=float(policy.get('trend_target_r',2.0))
+    if not math.isfinite(multiplier) or not 1<=multiplier<=5:
+        raise ValueError('Invalid trend target risk multiple')
+    if signal['strategy'] not in ('OPENING_RANGE_BREAKOUT','EMA_8_21_CROSS'):
+        return plan
+    direction=1 if signal['direction']=='BULL' else -1
+    price=round(spot+direction*float(plan['index_risk_points'])*multiplier,2)
+    if price<=0:
+        raise UpstoxError('Repriced trend target would be invalid')
+    return {**plan,'index_target':price,
+            'index_reward_points':round(abs(price-spot),2),
+            'target_basis':'RESEARCH_TREND_TARGET_'+str(multiplier)+'R'}
+
+
 def simulate_index_day(bars,day,market,slippage_points=0.0,
-                       max_trades=MAX_TRADES,min_chart_rr=MIN_CHART_RR):
+                       max_trades=MAX_TRADES,min_chart_rr=MIN_CHART_RR,
+                       policy=None):
     """Same intraday_signal and index_stop_plan as advanced option paper worker.
 
     SIGNAL on closed bar -> next bar OPEN -> monitor future OHLC, one position
@@ -193,8 +259,13 @@ def simulate_index_day(bars,day,market,slippage_points=0.0,
         if confirmed<cooldown_until:
             rejected['COOLDOWN']+=1
             continue
+        block=_policy_signal_guard(ordered[:i+1],signal,policy)
+        if block:
+            rejected[block]+=1
+            continue
         try:
             plan=index_stop_plan(ordered[:i+1],signal,bar.close,confirmed)
+            plan=_policy_adjust_target(plan,signal,bar.close,policy)
         except (UpstoxError,ValueError,KeyError,TypeError):
             rejected['INVALID_TECHNICAL_STOP_OR_TARGET']+=1
             continue
