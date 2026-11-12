@@ -233,6 +233,10 @@ def dispatch(a):
               'precommitted_configurations':result['precommitted_configurations'],
               'results':[{'playbook':c['playbook'],'train':c['train'],
                           'validation':c['validation'],
+                          'train_candidate_signals':c['train_candidate_signals'],
+                          'validation_candidate_signals':c['validation_candidate_signals'],
+                          'train_rejections':c['train_rejections'],
+                          'validation_rejections':c['validation_rejections'],
                           'eligible_for_holdout':c['eligible_for_holdout']}
                          for c in result['results']],
               'selected_before_holdout':result['selected_before_holdout'],
