@@ -180,21 +180,50 @@ def _load_sessions(start,end,market,reader,cache_dir):
     return sessions
 
 
+def _entry_cost_guard(intent,max_fee_r=0.25,latest_signal_time=None):
+    """Reject when worst-side estimated round-trip fees exceed a fraction of R.
+
+    Uses only current INDEX price, stop/target, market, direction and date.
+    Entry/stop/target are treated as futures-price PROXIES, never quoted fills.
+    """
+    if latest_signal_time is not None:
+        confirmed=dt.datetime.fromisoformat(intent['signal_time']).astimezone(IST)
+        if confirmed.time()>dt.time.fromisoformat(latest_signal_time):
+            return 'LATE_SIGNAL_OUTSIDE_SIMPLE_WINDOW'
+    if not (0<max_fee_r<=1):
+        raise ValueError('Simple cost fraction must be in (0,1]')
+    proxy=dict(intent,index_points=0)
+    stop=futures_cost_proxy({**proxy,'exit':intent['stop']})
+    target=futures_cost_proxy({**proxy,'exit':intent['target']})
+    risk_rupees=intent['risk_points']*stop['futures_proxy_lot']
+    if max(stop['futures_proxy_charges_inr'],
+           target['futures_proxy_charges_inr'])>risk_rupees*max_fee_r:
+        return 'ESTIMATED_FUTURES_FEES_EXCEED_RISK_FRACTION'
+    return None
+
+
 def _replay_subset(sessions,days,policy,slippage):
     trades=[]
     excluded=Counter()
     rejection=Counter()
     signals=0
+    max_trades=int(policy.get('max_trades_per_day',3)) if policy else 3
+    cost_guard=None
+    if policy and 'max_fee_r' in policy:
+        max_fee_r=float(policy['max_fee_r'])
+        stop_time=policy.get('latest_signal_time')
+        cost_guard=lambda intent:_entry_cost_guard(intent,max_fee_r,stop_time)
     for session in sessions:
         if session['day'] not in days:
             continue
         result=simulate_index_day(session['bars'],session['day'],
                                   session['market'],
                                   slippage_points=slippage,
-                                  max_trades=3,
+                                  max_trades=max_trades,
                                   min_chart_rr=policy.get('min_chart_rr',1.5)
                                   if policy else 1.5,
-                                  policy=policy)
+                                  policy=policy,
+                                  entry_filter=cost_guard)
         if result['status']!='OK':
             excluded[result['status']]+=1
             continue
