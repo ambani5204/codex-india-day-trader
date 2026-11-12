@@ -27,8 +27,7 @@ def summarize(day: str, market: str, worker_exit: int, startup: str) -> dict:
     counts = collections.Counter()
     by_strategy = collections.Counter()
     exit_reasons = collections.Counter()
-    closed = wins = 0
-    net = fees = 0.0
+    closed = 0
     unresolved = 0
     sessions = 0
     for path in sorted(JOURNALS.glob(f"{day}_{market}_*.jsonl")):
@@ -60,12 +59,6 @@ def summarize(day: str, market: str, worker_exit: int, startup: str) -> dict:
                 unresolved += 1
             if kind == "PAPER_TRADE_CLOSED":
                 closed += 1
-                pnl = float(e.get("net_pnl") or 0)
-                net += pnl
-                wins += pnl > 0
-                fee_data = e.get("fees")
-                if isinstance(fee_data, dict):
-                    fees += float(fee_data.get("total") or 0)
                 reason = str(e.get("reason") or "")
                 if reason in ("STOP", "STOP_LOSS", "TARGET", "TARGET_HIT",
                               "INDEX_STOP", "TIME_EXIT", "FLAT_BY",
@@ -79,9 +72,7 @@ def summarize(day: str, market: str, worker_exit: int, startup: str) -> dict:
         "status": "FAILED_OR_INCOMPLETE" if worker_exit or unresolved else (
             "NO_SESSION" if not sessions else "COMPLETE"),
         "startup": startup, "worker_exit_code": worker_exit,
-        "sessions": sessions, "closed_trades": closed, "winning_trades": wins,
-        "net_pnl_inr_estimated": round(net, 2),
-        "fees_inr_estimated": round(fees, 2),
+        "sessions": sessions, "closed_trades": closed,
         "event_counts": dict(sorted(counts.items())),
         "signal_counts_by_strategy": dict(sorted(by_strategy.items())),
         "exit_reason_counts": dict(sorted(exit_reasons.items())),
