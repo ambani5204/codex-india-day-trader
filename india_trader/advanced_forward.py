@@ -53,6 +53,29 @@ def _chain_iv(chain,spot,direction):
         return None
 
 
+def latest_closed_index_close(api, market, now):
+    """Observe only a FRESH, fully closed 5m index candle; otherwise no trigger."""
+    bars=api.candles(INDICES[market])
+    eligible=[b for b in bars if b.time.date()==now.date() and
+              b.time+dt.timedelta(minutes=5)<=now]
+    if not eligible:
+        return None
+    latest=max(eligible,key=lambda b:b.time)
+    age=(now-(latest.time+dt.timedelta(minutes=5))).total_seconds()
+    return latest.close if 0<=age<315 else None
+
+
+def index_invalidated(position, index_close):
+    if index_close is None:
+        return False
+    plan=position.get('index_stop_plan') or {}
+    stop=plan.get('index_stop')
+    if stop is None:
+        return False
+    direction=position.get('direction')
+    return (direction=='BULL' and index_close<=stop) or (direction=='BEAR' and index_close>=stop)
+
+
 def run_advanced(args,settings,reader=None,clock=None,sleep=None):
     clock=clock or (lambda:dt.datetime.now(IST))
     sleep=sleep or time.sleep
@@ -99,17 +122,14 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                 try:
                     if pos['kind']=='CREDIT':
                         chain=api.option_chain(INDICES[args.market],pos['contract']['expiry'])
-                        # Check the actual closed index candle against the ORB/ATR
-                        # stop. Never infer a position exit from an unfinished bar.
-                        candle_list=api.candles(INDICES[args.market])
-                        closed_bars=[b for b in candle_list if b.time.date()==today and
-                                     b.time+dt.timedelta(minutes=5)<=now]
-                        index_close=None
-                        if closed_bars:
-                            latest=max(closed_bars,key=lambda b:b.time)
-                            age=(now-(latest.time+dt.timedelta(minutes=5))).total_seconds()
-                            if 0<=age<315:
-                                index_close=latest.close
+                        # Index data is optional for the index stop. A failed
+                        # candles request must NEVER disable credit-price stops.
+                        try:
+                            index_close=latest_closed_index_close(api,args.market,now)
+                        except (UpstoxError,ValueError,KeyError) as exc:
+                            index_close=None
+                            record({'event':'INDEX_DATA_WARNING','timestamp':now.isoformat(),
+                                    'message':str(exc)})
                         mark=spread_mark(pos['contract'],chain,args.market,now,index_close=index_close)
                         if mark['reason']:
                             net+=float(mark['net_pnl'])
@@ -138,8 +158,19 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                         record({'event':'QUOTE_SNAPSHOT','timestamp':q.timestamp.isoformat(),
                                 'captured_at':now.isoformat(),'bid':q.bid,'ask':q.ask,
                                 'symbol':pos['contract']['symbol']})
+                        try:
+                            index_close=latest_closed_index_close(api,args.market,now)
+                        except (UpstoxError,ValueError,KeyError) as exc:
+                            index_close=None
+                            record({'event':'INDEX_DATA_WARNING','timestamp':now.isoformat(),
+                                    'message':str(exc)})
+                        invalid=index_invalidated(
+                            {'index_stop_plan':pos['contract'].get('index_stop_plan'),
+                             'direction':'BULL' if pos['contract']['option_type']=='CE' else 'BEAR'},
+                            index_close)
                         result=engine.process(q,now=now,
-                                              max_age_seconds=args.max_quote_age_seconds)
+                                              max_age_seconds=args.max_quote_age_seconds,
+                                              force_exit_reason='INDEX_STOP' if invalid else None)
                         if result:
                             record(result)
                             if result['event']=='PAPER_TRADE_CLOSED':
