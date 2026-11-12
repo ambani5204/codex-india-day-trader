@@ -135,7 +135,7 @@ class WalkForwardTests(unittest.TestCase):
             report=run_walk_forward_research(
                 start,end,'SENSEX',reader=fake,
                 cache_dir=folder/'cache',out=folder/'report.json',
-                max_configs=3,slippage_points=1.0,
+                max_configs=3,slippage_points=.2,
                 min_train=3,min_validation=2,min_holdout=2)
             self.assertEqual(report['trials_run'],3)
             self.assertEqual(len(report['trials']),3)
