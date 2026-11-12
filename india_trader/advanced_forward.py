@@ -17,7 +17,7 @@ from .paper_sim import PaperEngine, journal_write
 from .upstox import (INDICES, UpstoxReader, UpstoxError,
                      load_today_master, select_atm, select_delta_contract,
                      normalize_expiry)
-from .upstox_forward import _daily_risk
+from .upstox_forward import _daily_risk, _events
 
 
 def earliest_current_expiry(records,market,today):
@@ -76,6 +76,41 @@ def index_invalidated(position, index_close):
     return (direction=='BULL' and index_close<=stop) or (direction=='BEAR' and index_close>=stop)
 
 
+def previous_day_state(folder, day, market, cooldown_minutes=15):
+    """Safely resume after completed paper sessions without resetting day limits.
+
+    An earlier same-day no-trade ORB session is allowed. Never continue
+    while any same-day journal lacks a final summary or has an open position;
+    this also prevents parallel direct CLI starts once a journal exists.
+    """
+    journals=sorted(folder.glob(f'{day.isoformat()}_*.jsonl'))
+    closed=[]
+    prior_market_count=0
+    for file in journals:
+        events=_events(file)
+        if not events or not any(e.get('event')=='SESSION_SUMMARY' for e in events):
+            raise UpstoxError(f'Prior paper session is unfinished: {file}. Cannot start a second worker.')
+        summary=next(e for e in reversed(events) if e.get('event')=='SESSION_SUMMARY')
+        if any(e.get('event')=='UNRESOLVED_POSITION' for e in events) or (
+                isinstance(summary.get('summary'),dict) and
+                summary['summary'].get('open_position')):
+            raise UpstoxError(f'Prior session has an unresolved position: {file}')
+        if file.name.startswith(day.isoformat()+'_'+market+'_'):
+            prior_market_count+=1
+        closed.extend(e for e in events if e.get('event')=='PAPER_TRADE_CLOSED')
+    net=sum(float(e['net_pnl']) for e in closed)
+    consumed=sum(max(0.0,-float(e['net_pnl'])) for e in closed)
+    latest=None
+    for event in closed:
+        if event.get('timestamp'):
+            time=parse_time(event['timestamp'])
+            latest=time if latest is None or time>latest else latest
+    cooldown_until=(latest+dt.timedelta(minutes=cooldown_minutes)) if latest else None
+    return {'prior_session_count':len(journals),'prior_market_sessions':prior_market_count,
+            'closed_trades':len(closed),'realized_net_pnl':round(net,2),
+            'loss_consumed_inr':round(consumed,2),'cooldown_until':cooldown_until}
+
+
 def run_advanced(args,settings,reader=None,clock=None,sleep=None):
     clock=clock or (lambda:dt.datetime.now(IST))
     sleep=sleep or time.sleep
@@ -94,9 +129,14 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
     folder=Path(args.directory)
     folder.mkdir(parents=True,exist_ok=True)
     _daily_risk(folder,today,settings)
-    if list(folder.glob(today.isoformat()+'_'+args.market+'_*.jsonl')):
-        raise UpstoxError('Existing session for this market/date; no duplicates')
-    jpath=folder/(f'{today}_{args.market}_ADVANCED_{now:%H%M%S}.jsonl')
+    prior=previous_day_state(folder,today,args.market,args.cooldown_minutes)
+    if prior['closed_trades']>=int(settings['max_trades_per_day']):
+        raise UpstoxError('Daily paper trade count limit reached; no continuation')
+    if prior['loss_consumed_inr']>=float(settings['max_daily_loss_inr']):
+        raise UpstoxError('Daily loss allowance consumed; no continuation')
+    jpath=folder/(f'{today}_{args.market}_ADVANCED_{now:%H%M%S%f}.jsonl')
+    if jpath.exists():
+        raise UpstoxError(f'Advanced journal already exists: {jpath}')
     session={'session':jpath.stem,'market':args.market,
              'source':'UPSTOX_READ_ONLY_REST_V3_AND_OPTION_CHAIN',
              'mode':'EXPERIMENTAL_ALL_DAY_PAPER_NO_EXCHANGE_FILLS',
@@ -105,14 +145,24 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
         journal_write(jpath,{**session,**event})
     record({'event':'SESSION_START','timestamp':now.isoformat(),
             'capital':settings['capital_inr'],'max_loss_per_trade':settings['max_loss_per_trade_inr'],
+            'prior_sessions':prior['prior_session_count'],
+            'prior_closed_trades':prior['closed_trades'],
+            'prior_cumulative_loss_inr':prior['loss_consumed_inr'],
             'warning':'All fills hypothetical, REST samples may miss price moves; no broker orders'})
+    if prior['prior_session_count']:
+        print(f"Resuming same-day PAPER analysis after {prior['prior_session_count']} "
+              f"completed session(s), {prior['closed_trades']} closed prior trades. "
+              f"Never backfilling missed candles.",flush=True)
     api=reader or UpstoxReader()
     closed=0
     net=0.
     loss_consumed=0.0  # Profitable trades do NOT replenish daily loss allowance.
+    prior_closed=prior['closed_trades']
+    prior_net=prior['realized_net_pnl']
+    prior_consumed=prior['loss_consumed_inr']
     error_count=0
     last_bar=None
-    cooldown_until=now
+    cooldown_until=max(now,prior['cooldown_until']) if prior['cooldown_until'] else now
     pos=None
     engine=None
     try:
@@ -192,9 +242,9 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                         break
                 else:
                     error_count=0
-            elif (closed<int(settings['max_trades_per_day']) and
-                  loss_consumed<float(settings['max_daily_loss_inr']) and
-                  net>-float(settings['max_daily_loss_inr']) and now>=cooldown_until):
+            elif (prior_closed+closed<int(settings['max_trades_per_day']) and
+                  prior_consumed+loss_consumed<float(settings['max_daily_loss_inr']) and
+                  prior_net+net>-float(settings['max_daily_loss_inr']) and now>=cooldown_until):
                 try:
                     bars=api.candles(INDICES[args.market])
                     # Store this candle as evaluated regardless of signal.
@@ -221,7 +271,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                         if iv is None:
                             raise UpstoxError('No reliable IV; no paper entry')
                         kind='CREDIT' if iv>=args.credit_iv_threshold else 'LONG'
-                        remaining=float(settings['max_daily_loss_inr'])-loss_consumed
+                        remaining=float(settings['max_daily_loss_inr'])-prior_consumed-loss_consumed
                         stop_plan=index_stop_plan(bars,signal,last.close,now)
                         record({'event':'RISK_PLAN','timestamp':now.isoformat(),
                                 'index_stop_plan':stop_plan,
@@ -299,6 +349,10 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
         record({'event':'SESSION_SUMMARY','timestamp':now.isoformat(),
                 'status':'UNRESOLVED' if pos else 'CLOSED_OR_NO_TRADE',
                 'summary':{'closed_trades':closed,'realized_net_pnl':round(net,2),
+                           'prior_closed_trades':prior_closed,
+                           'day_total_closed_trades':prior_closed+closed,
+                           'day_cumulative_net_pnl':round(prior_net+net,2),
+                           'day_loss_consumed_inr':round(prior_consumed+loss_consumed,2),
                            'open_position':pos}})
     print(json.dumps({'session':session['session'],'closed_trades':closed,
                       'net_pnl':round(net,2),'unresolved':bool(pos),
