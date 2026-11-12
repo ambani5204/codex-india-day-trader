@@ -148,6 +148,14 @@ def main(argv=None):
     idxbt.add_argument('--out',default='trader/backtests/index_intraday.json')
     idxbt.add_argument('--slippage-points',type=float,default=0.0,
                        help='Hypothetical adverse index points per entry and exit; default zero')
+    simple=sub.add_parser('research-simple-edge',
+        help='Only 4 ORB/EMA hypotheses, one chart trade/day, sideways filter, pre-entry fees; NO deployment')
+    simple.add_argument('--from-date',required=True)
+    simple.add_argument('--to-date',required=True)
+    simple.add_argument('--market',choices=['AUTO','NIFTY','SENSEX','BOTH'],default='AUTO')
+    simple.add_argument('--cache-dir',default='trader/backtest_cache')
+    simple.add_argument('--out',default='trader/backtests/simple_edge_research.json')
+    simple.add_argument('--slippage-points',type=float,default=1.0)
     research=sub.add_parser('research-index-walk-forward',
         help='Bounded training/validation/holdout optimization with sideways/trend filters and futures COST PROXY; NEVER deploys')
     research.add_argument('--from-date',required=True,help='YYYY-MM-DD')
@@ -213,6 +221,25 @@ def dispatch(a):
               'rejected_signals':result['rejected_signals'],
               'options_net_pnl_inr':None,
               'results_path':a.out,'warning':result['warning']})
+        return 0
+    if a.cmd=='research-simple-edge':
+        from .research_optimizer import run_simple_edge_research
+        result=run_simple_edge_research(
+            a.from_date,a.to_date,a.market,cache_dir=a.cache_dir,
+            out=a.out,slippage_points=a.slippage_points)
+        dump({'kind':result['kind'],'status':result['status'],
+              'from_date':result['from_date'],'to_date':result['to_date'],
+              'market':result['market'],
+              'precommitted_configurations':result['precommitted_configurations'],
+              'results':[{'playbook':c['playbook'],'train':c['train'],
+                          'validation':c['validation'],
+                          'eligible_for_holdout':c['eligible_for_holdout']}
+                         for c in result['results']],
+              'selected_before_holdout':result['selected_before_holdout'],
+              'final_holdout':result['final_holdout'],
+              'final_holdout_double_slippage':result['final_holdout_double_slippage'],
+              'safe_to_scale':False,'results_path':a.out,
+              'warning':result['warning']})
         return 0
     if a.cmd=='research-index-walk-forward':
         from .research_optimizer import run_walk_forward_research
