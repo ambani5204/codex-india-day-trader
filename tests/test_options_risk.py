@@ -128,7 +128,7 @@ class LongOptionRiskTests(unittest.TestCase):
                       fee_profile='UPSTOX',planned_stop=95,planned_target=130,
                       min_net_reward_risk=1.5,remaining_daily_loss=500)
         self.assertEqual(e.process(Quote(t,99,100,1000,1000),signal=True,now=t)['event'],'ENTRY_SIGNAL')
-        fill=e.process(Quote(t+dt.timedelta(seconds=1),149,150,1000,1000),now=t+dt.timedelta(seconds=1))
+        fill=e.process(Quote(t+dt.timedelta(seconds=1),119,120,1000,1000),now=t+dt.timedelta(seconds=1))
         self.assertEqual(fill['event'],'ENTRY_REJECTED')
         self.assertEqual(fill['reason'],'CAPITAL_OR_MAX_LOSS_LIMIT')
         self.assertIsNone(e.position)
