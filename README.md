@@ -26,6 +26,24 @@ Upstox's **Expired Instruments API** can retrieve past option OHLC, but is plan-
 
 Official historical API docs: https://upstox.com/developer/api-documentation/v3/get-historical-candle-data/ and https://upstox.com/developer/api-documentation/get-expired-historical-candle-data/
 
+### New opening-range playbook: BREAKOUT, FAKEOUT and TRAP
+
+`PAPER_MODE=advanced` now distinguishes three **fully closed** 5-minute candle events against the opening 09:15–09:30 IST high/low:
+
+| Event | Confirmation | Reversal or continuation direction | Index stop | Projected target |
+|---|---|---|---|---|
+| **BREAKOUT** | First bar CLOSES above opening high / below low with a range buffer | Continuation: above → BULL; below → BEAR | Breakout bar's extreme, or OR boundary retest | 2R index move (hypothetical) |
+| **FAKEOUT** | Wick sweeps outside OR, rejects the move and closes back **inside** without previous outside close | Contrarian: upper sweep → BEAR; lower sweep → BULL | Beyond actual swept wick | OR midpoint |
+| **TRAP** | 1–3 earlier bars CLOSED outside OR; newest bar closes back INSIDE | Contrarian: trapped bulls → BEAR; trapped bears → BULL | Beyond whole failed-breakout episode's extreme | Opposite OR boundary |
+
+The pattern must remain recent; an old multi-candle trend returning to the range is not automatically labeled a trap. Ambiguous both-side wick sweeps produce no fakeout signal. The scanner requires fully closed bars and ignores stale 5-minute signals. EMA 8/21 and mean-reversion signals remain active alongside these patterns.
+
+**Expiry-aware option decision:** BULL → buy CE or **sell PE + buy a lower-strike protective PE**; BEAR → buy PE or **sell CE + buy a higher-strike protective CE**. The buying leg comes from the **earliest eligible future expiry** (never expiring today). A credit spread uses same-expiry legs and is *never naked*; if its expiry is today, new entries are blocked after 13:45 IST.
+
+**Buy vs sell preference (experimental, not validated):** If near-ATM IV is below 18%, evaluate only a long CE/PE. At or above 18%, directional **BREAKOUT, TRAP and EMA** consider long CE/PE first; range **FAKEOUT and MEAN_REVERSION** consider hedged credit first. If the preferred structure is rejected due to inadequate modeled R:R, risk, option depth or expiry cutoff, consider the second *only if independently eligible*. Long buys must offer at least **1.5 net R:R** including estimated charges; hedged credits require at least **0.25 net target-to-credit-stop R:R**, with positive target net profit and both credit-stop plus expiry maximum payoff loss inside the adaptive equity-risk allowance. These ratios are **not directly comparable** across option buying and credit selling because their outcome distributions differ. No trade is guaranteed. Quote/API outages fail closed.
+
+All live trading is disabled: this is a *read-only, quote-based paper simulator*. Historical 2025–26 signal counts were generated **before** this new classification and are **not** a backtest of the new signals or historical option profits.
+
 ### New option risk controls in `PAPER_MODE=advanced`
 
 The Indian options adaptation now follows the **exit → budget → risk** design of the original US toolkit:
@@ -72,7 +90,7 @@ python -m unittest discover -s tests -v
 PAPER_MODE=advanced bash live-paper-android.sh
 ```
 
-This checks the saved Analytics Token and schedules the next weekday. From 09:35 until 14:40 IST, it evaluates new **closed 5-minute** index bars for ORB, EMA crossover or mean-reversion setups. With qualifying Upstox option-chain quotes, it may paper-buy a CE/PE, or paper-sell a **defined-risk credit spread with a mandatory long wing**. It monitors positions approximately every 30 seconds through REST snapshots and may record several trades per day, but only while original loss/capital/daily trade limits permit. **No setups or failed filters means zero trades.** IV >= 18% is an *experimental*, non-validated decision threshold, not a reliable option-selling signal.
+This checks the saved Analytics Token and schedules the next weekday. From 09:35 until 14:40 IST, it evaluates new **closed 5-minute** index bars for opening-range breakout, fakeout, bull/bear trap, EMA crossover or mean-reversion setups. With qualifying Upstox option-chain quotes, it may paper-buy a CE/PE, or paper-sell a **defined-risk credit spread with a mandatory long wing**. It monitors positions approximately every 30 seconds through REST snapshots and may record several trades per day, but only while original loss/capital/daily trade limits permit. **No setups or failed filters means zero trades.** IV >= 18% is an *experimental*, non-validated decision threshold, not a reliable option-selling signal.
 
 Same-day expiry short spreads are **paper-only** and seek a modeled exit by 14:45 IST; long option paper positions seek a 15:10 time exit. If quotes disappear, any position stays **UNRESOLVED** and blocks a new simulated session. There are no real fills, exchange orders, protective broker stops, confirmed four-leg simultaneous execution, or verified spread margin. Commissions and taxes are estimates. Use this solely to collect forward data and examine whether *net* results survive conservative cost assumptions; no profitable edge has been established.
 
