@@ -132,6 +132,14 @@ def main(argv=None):
     sums.add_argument('--period',choices=['day','month'],default='day')
     sums.add_argument('--date',help='YYYY-MM-DD for day, YYYY-MM for month')
     sums.add_argument('--database',default='trader/paper.sqlite3')
+    adv=sub.add_parser('paper-advanced',help='EXPERIMENTAL all-session multi-signal, long options + hedged credit spreads; paper ONLY')
+    adv.add_argument('--market',choices=['NIFTY','SENSEX'],required=True)
+    adv.add_argument('--master',default='trader/upstox_instruments.json')
+    adv.add_argument('--directory',default='trader/paper_upstox')
+    adv.add_argument('--poll-seconds',type=float,default=30)
+    adv.add_argument('--cooldown-minutes',type=float,default=15)
+    adv.add_argument('--max-quote-age-seconds',type=float,default=15)
+    adv.add_argument('--credit-iv-threshold',type=float,default=18)
     demo=sub.add_parser('demo-generate',help='Generate EXPLICITLY SYNTHETIC winning and losing paper sessions')
     demo.add_argument('--directory',default='trader/demo_forward')
     dash=sub.add_parser('dashboard',help='Serve mobile paper-only dashboard; demo by default')
@@ -169,6 +177,10 @@ def dispatch(a):
         serve_dashboard(a.host,a.port,folder,a.mode,a.monthly_fixed_cost)
         return 0
     cfg=config()
+    if a.cmd=='paper-advanced':
+        from .advanced_forward import run_advanced
+        cfg=paper_settings_partitioned(cfg,os.environ.get('PAPER_MARKET_PARTITIONS','1'))
+        return run_advanced(a,cfg)
     if a.cmd=='paper-upstox':
         from .upstox_forward import run_upstox
         cfg=paper_settings_partitioned(cfg,os.environ.get('PAPER_MARKET_PARTITIONS','1'))
