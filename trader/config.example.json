@@ -3,6 +3,7 @@
   "timezone": "Asia/Kolkata",
   "capital_inr": 100000,
   "max_loss_per_trade_inr": 500,
+  "advanced_risk_percent": 1,
   "max_daily_loss_inr": 1500,
   "max_trades_per_day": 3,
   "max_allocation_fraction": 0.25,
