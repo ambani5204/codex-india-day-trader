@@ -156,11 +156,13 @@ def _policy_adjust_target(plan,signal,spot,policy):
 
 def simulate_index_day(bars,day,market,slippage_points=0.0,
                        max_trades=MAX_TRADES,min_chart_rr=MIN_CHART_RR,
-                       policy=None):
+                       policy=None,entry_filter=None):
     """Same intraday_signal and index_stop_plan as advanced option paper worker.
 
     SIGNAL on closed bar -> next bar OPEN -> monitor future OHLC, one position
-    max, up to 3 trades/day, 15min cooldown, flat at 15:10 IST.
+    max, up to 3 trades/day, 15min cooldown, flat at 15:10 IST. The optional
+    pure entry_filter receives only the already-known entry/stop/target/date,
+    not any future candle, and can veto a hypothetical entry for research.
     """
     if not isinstance(day,dt.date) or market not in ('NIFTY','SENSEX'):
         raise ValueError('Invalid day or market')
@@ -207,6 +209,15 @@ def simulate_index_day(bars,day,market,slippage_points=0.0,
                 rejected['COOLDOWN']+=1
             elif opened is not None:
                 rejected['ACTIVE_POSITION']+=1
+            elif entry_filter is not None and (block:=entry_filter({
+                    'day':day.isoformat(),'market':market,
+                    'direction':direction,'entry':entry,'stop':stop,
+                    'target':target,'risk_points':risk,
+                    'strategy':signal['strategy'],
+                    'signal_time':signal_time.isoformat()})):
+                # A pure pre-entry gate: only the known next opening, setup
+                # stop/target and date may be inspected; never future OHLC.
+                rejected[str(block)]+=1
             else:
                 opened={'day':day.isoformat(),'market':market,
                         'strategy':signal['strategy'],
