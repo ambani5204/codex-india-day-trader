@@ -8,7 +8,7 @@ import unittest
 from india_trader.core import Bar, IST
 from india_trader.paper_sim import PaperEngine,Quote
 from india_trader.options_risk import (atr_5m,index_stop_plan,
-                                       size_long_option,select_long_risk_managed)
+                                       size_long_option,select_long_risk_managed,adaptive_paper_risk)
 from india_trader.intraday_lab import select_credit_spread,spread_mark
 from india_trader.upstox import UpstoxError
 
@@ -125,6 +125,54 @@ class IndexStopTests(unittest.TestCase):
         now=bars[-1].time+dt.timedelta(minutes=5,seconds=1)
         with self.assertRaisesRegex(UpstoxError,'No valid favorable structural target'):
             index_stop_plan(bars,{'strategy':'MEAN_REVERSION','direction':'BULL'},1002,now)
+
+
+class AdaptiveRiskTests(unittest.TestCase):
+    def test_percent_equity_budget_does_not_use_legacy_500_rupees(self):
+        cfg={**CFG,'advanced_risk_percent':1.0}
+        p=adaptive_paper_risk(cfg)
+        self.assertEqual(p['trade_risk_cap_inr'],1000)
+        self.assertEqual(p['remaining_daily_loss_inr'],1500)
+        self.assertEqual(CFG['max_loss_per_trade_inr'],500)
+
+    def test_losses_reduce_available_trade_risk_even_after_wins(self):
+        cfg={**CFG,'advanced_risk_percent':1.0}
+        p=adaptive_paper_risk(cfg,realized_net=-200,realized_losses=700)
+        self.assertEqual(p['paper_equity_inr'],99800)
+        self.assertEqual(p['trade_risk_cap_inr'],800)
+        q=adaptive_paper_risk(cfg,realized_net=800,realized_losses=700)
+        self.assertEqual(q['trade_risk_cap_inr'],800)
+
+    def test_adjustable_smaller_risk_and_hard_upper_bound(self):
+        cfg={**CFG,'advanced_risk_percent':0.75}
+        self.assertEqual(adaptive_paper_risk(cfg)['trade_risk_cap_inr'],750)
+        for invalid in (0,1.01,float('nan'),float('inf'),-1):
+            with self.subTest(invalid=invalid),self.assertRaises(UpstoxError):
+                adaptive_paper_risk({**CFG,'advanced_risk_percent':invalid})
+
+    def test_one_lot_nifty_scenario_adaptive_accepts_fixed_500_rejects(self):
+        index={'index_risk_points':20,'index_spot':26000,
+               'index_stop':25980,'basis':'EXAMPLE'}
+        with self.assertRaises(UpstoxError):
+            size_long_option(100,99,.5,65,'NFO',CFG,index)
+        p=adaptive_paper_risk({**CFG,'advanced_risk_percent':1.0})
+        sized=size_long_option(100,99,.5,65,'NFO',
+            {**CFG,'max_loss_per_trade_inr':p['trade_risk_cap_inr']},index,
+            remaining_daily_loss=p['remaining_daily_loss_inr'])
+        self.assertEqual(sized['lots'],1)
+        self.assertGreater(sized['estimated_stop_loss_including_charges'],500)
+        self.assertLessEqual(sized['estimated_stop_loss_including_charges'],1000)
+        self.assertGreaterEqual(sized['net_reward_risk'],1.5)
+
+    def test_depleted_day_still_blocks_even_1_percent_entry(self):
+        p=adaptive_paper_risk({**CFG,'advanced_risk_percent':1},
+            realized_net=-1450,realized_losses=1450)
+        self.assertEqual(p['trade_risk_cap_inr'],50)
+        with self.assertRaises(UpstoxError):
+            size_long_option(100,99,.5,65,'NFO',
+               {**CFG,'max_loss_per_trade_inr':p['trade_risk_cap_inr']},
+               {'index_risk_points':20,'index_spot':26000,'index_stop':25980},
+               remaining_daily_loss=p['remaining_daily_loss_inr'])
 
 
 class LongOptionRiskTests(unittest.TestCase):
