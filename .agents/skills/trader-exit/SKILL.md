@@ -36,6 +36,10 @@ The other ten folders in `.agents/skills/` cover scan → entry → exit → tim
 
 ## Full-day India options skill relationship
 
-Experimental engine tracks indicative long option stops/targets/time-outs and two-leg credit-spread debit closes; exits remain unresolved when quotes disappear, no broker stop order.
+The advanced strategy computes different **index invalidation** prices from completed candles. A genuine breakout uses the confirmed breakout candle's low/high or a retest of the opening-range boundary; fakeout uses the swept wick extreme plus a buffer; a failed-breakout trap uses the most extreme price of its short outside-close episode plus a buffer. EMA uses a 6-bar swing plus ATR buffer; mean reversion uses a 3-bar swing plus ATR buffer.
+
+Targets: breakout and EMA use a hypothetical **2R index-price projection**, fakeout targets the **opening-range midpoint**, trap targets the **opposite opening-range boundary**, and mean reversion targets the preceding 20-bar average. These are *plans, not expected price moves*. Long option estimates use live delta to map index stop/target into indicative option bid and require **net R:R ≥ 1.5 after fees**. Hedged credits use separate four-leg fee models and require estimated target/stop **net R:R ≥ 0.25** and positive target profit; both the modeled credit stop AND expiry payoff loss must fit the trade risk budget. If the target is not favorable or risk is unaffordable, skip without tightening the structural stop.
+
+The model uses non-guaranteed REST snapshot monitoring. A quote outage can produce unresolved entries/exits, and actual losses could be larger than the estimated trade budget. The legacy `exit` command remains independent of the advanced paper mode.
 
 See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
