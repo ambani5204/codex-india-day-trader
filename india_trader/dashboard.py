@@ -46,17 +46,27 @@ def read_journals(folder):
                      isinstance(e.get('contract'),dict)),None)
         if signal and isinstance(signal.get('contract'),dict):
             choice=signal['contract']
+            long_plan=choice.get('risk_plan') or {}
             session['contract_selection']={
                 'expiry':choice.get('expiry'),'strike':choice.get('strike'),
                 'type':choice.get('option_type'),'delta':choice.get('delta'),
                 'iv':choice.get('iv'),'theta':choice.get('theta'),
                 'quoted_ask':choice.get('quoted_ask'),
                 'selection':choice.get('selection'),
-                'estimated_stop_loss':choice.get('estimated_stop_loss_including_charges'),
+                'estimated_stop_loss':long_plan.get('estimated_stop_loss_including_charges',
+                                                     choice.get('estimated_stop_loss_including_charges')),
                 'short_strike':choice.get('short_strike'),
                 'long_strike':choice.get('long_strike'),
                 'credit':choice.get('credit_per_unit'),
-                'structure':choice.get('strategy')}
+                'structure':choice.get('strategy'),
+                'long_stop':long_plan.get('stop_bid'),'long_target':long_plan.get('target_bid'),
+                'long_net_rr':long_plan.get('net_reward_risk'),
+                'lots':long_plan.get('lots'),'quantity':long_plan.get('quantity'),
+                'spread_max_loss':choice.get('estimated_max_expiry_loss_after_fees'),
+                'spread_net_rr':choice.get('net_reward_risk_at_credit_stop')}
+        rejected=next((e for e in reversed(data) if e.get('event')=='SIGNAL_REJECTED'),None)
+        if rejected:
+            session['last_rejection']=str(rejected.get('message',''))[:160]
         sessions.append(session)
         quotes=[e for e in data if e.get('event')=='QUOTE_SNAPSHOT']
         if quotes:
