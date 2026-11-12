@@ -24,11 +24,11 @@ class MockApi:
         self.clock=clock
     def candles(self,index):
         t=lambda minute:dt.datetime(2026,11,12,9,minute,tzinfo=IST)
-        return [Bar(t(15),100,101,99,100),Bar(t(20),100,101,99,100),
-                Bar(t(25),100,101,99,100),Bar(t(30),102,103,101,102)]
+        return [Bar(t(15),1000,1005,995,1000),Bar(t(20),1000,1005,995,1000),
+                Bar(t(25),1000,1005,995,1000),Bar(t(30),1020,1025,1015,1020)]
     def option_chain(self,index,expiry):
         data=[]
-        for strike,delta,bid,ask in ((90,-.25,7,7.08),(85,-.08,3,3.04),(80,-.03,1,1.01)):
+        for strike,delta,bid,ask in ((900,-.25,48,48.48),(850,-.08,8,8.05),(800,-.03,1,1.01)):
             key=f'BSE_FO|{strike}P'
             data.append({'expiry':expiry,'strike_price':strike,
                          'call_options':{'instrument_key':'BSE_FO|IV',
@@ -43,7 +43,7 @@ class MockApi:
 
 def master():
     result=[]
-    for strike in (90,85,80):
+    for strike in (900,850,800):
         result.append({'segment':'BSE_FO','instrument_type':'PE',
                        'underlying_symbol':'SENSEX',
                        'instrument_key':f'BSE_FO|{strike}P',
