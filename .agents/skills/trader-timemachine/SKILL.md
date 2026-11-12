@@ -33,3 +33,9 @@ Historical sample must be explicitly sourced. Simulator reports empirical outcom
 ## Related skills
 
 The other ten folders in `.agents/skills/` cover scan → entry → exit → timemachine → budget → risk → broker, plus news, alerts and analyst. Indian insider disclosures are provided by `trader-pelosi` to preserve the 11-skill organization. Optional original US Claude/Python contents can be copied with `scripts/import_upstream.py`.
+
+## Full-day India options skill relationship
+
+Offline backtesting and historical CSV tools exist separately, but the new intraday options/hedged spread engine has NOT been validated on historical market-chain quotes.
+
+See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
