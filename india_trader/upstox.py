@@ -304,6 +304,36 @@ class UpstoxReader:
             except (IndexError,TypeError,ValueError):continue
         return sorted(bars,key=lambda b:b.time)
 
+    def historical_index_candles(self, index_key, from_date, to_date):
+        """Historical 5-minute index OHLC via Upstox V3 (max ~1 month/request).
+
+        All trading timestamps are returned as actual IST-aware Bar objects.
+        The caller must split long date ranges into <= 1-month requests.
+        """
+        start=dt.date.fromisoformat(str(from_date))
+        end=dt.date.fromisoformat(str(to_date))
+        if end<start or (end-start).days>26:
+            raise UpstoxError('Historical 5-minute request must cover at most 27 calendar days')
+        if index_key not in INDICES.values():
+            raise UpstoxError('Historical signal replay only supports NIFTY/SENSEX indices')
+        path=(f'/v3/historical-candle/{urlencode_path(index_key,safe="")}'
+              f'/minutes/5/{end.isoformat()}/{start.isoformat()}')
+        response=self.get(path)
+        if not isinstance(response,dict) or not isinstance(response.get('candles'),list):
+            raise UpstoxError('Historical Upstox V3 candle payload missing')
+        bars=[]
+        for row in response['candles']:
+            try:
+                bar=Bar(parse_time(str(row[0])),*(float(v) for v in row[1:5]),
+                        float(row[5]) if len(row)>5 else 0.0)
+                if start<=bar.time.date()<=end:
+                    bars.append(bar)
+            except (ValueError,TypeError,IndexError) as exc:
+                raise UpstoxError('Historical Upstox candle malformed; refuse incomplete backtest') from exc
+        if len({b.time for b in bars})!=len(bars):
+            raise UpstoxError('Duplicate historical index candle timestamps in response')
+        return sorted(bars,key=lambda b:b.time)
+
     def option_chain(self, index_key, expiry):
         """Read-only contract chain: premium, quote depth, IV and Greeks."""
         result=self.get('/v2/option/chain',{'instrument_key':index_key,'expiry_date':expiry})
