@@ -6,6 +6,25 @@ This project adapts the 11 skill *roles* from [Jakeschincariol/day-trader-skill]
 
 It is intended for **educational analysis** and controlled manual/paper workflows, not guaranteed profitability. Historical tests have lookahead and selection-bias risk unless verified against accurate, timestamped, independently collected market data.
 
+## EXPERIMENTAL: All-session options paper trading (buy and hedged sell)
+
+This new option is **not the default**: the older ORB-only system is retained unchanged unless you opt in.
+
+Stop the existing overnight Termux scheduler with CTRL+C **outside market hours and only if no unresolved paper position**, then:
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+python -m unittest discover -s tests -v
+PAPER_MODE=advanced bash live-paper-android.sh
+```
+
+This checks the saved Analytics Token and schedules the next weekday. From 09:35 until 14:40 IST, it evaluates new **closed 5-minute** index bars for ORB, EMA crossover or mean-reversion setups. With qualifying Upstox option-chain quotes, it may paper-buy a CE/PE, or paper-sell a **defined-risk credit spread with a mandatory long wing**. It monitors positions approximately every 30 seconds through REST snapshots and may record several trades per day, but only while original loss/capital/daily trade limits permit. **No setups or failed filters means zero trades.** IV >= 18% is an *experimental*, non-validated decision threshold, not a reliable option-selling signal.
+
+Same-day expiry short spreads are **paper-only** and seek a modeled exit by 14:45 IST; long option paper positions seek a 15:10 time exit. If quotes disappear, any position stays **UNRESOLVED** and blocks a new simulated session. There are no real fills, exchange orders, protective broker stops, confirmed four-leg simultaneous execution, or verified spread margin. Commissions and taxes are estimates. Use this solely to collect forward data and examine whether *net* results survive conservative cost assumptions; no profitable edge has been established.
+
+**All eleven original skill names remain** in `.agents/skills`, but not every skill participates in each intraday decision. See [actual Indian 11-skill integration status](docs/INDIA_11_SKILLS.md) for details. In particular, company earnings, insider filings, news and historical backtesting have separate workflows and must not be mislabeled as active auto-trade signals. A fresh, independently validated options tick/backtest dataset is needed before treating this experiment as a strategy.
+
 ## Android overnight start (no VPS required)
 
 **Start at any time** — night, morning, or during market hours. In Termux:
