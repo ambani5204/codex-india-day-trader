@@ -9,7 +9,8 @@ from india_trader.core import Bar,IST
 from india_trader.index_intraday_backtest import _policy_signal_guard,_policy_adjust_target,simulate_index_day
 from india_trader.research_optimizer import (
     futures_cost_proxy, _candidate_params, _eligible, _period_days,
-    run_walk_forward_research)
+    run_walk_forward_research, _entry_cost_guard,
+    simple_playbook_presets, run_simple_edge_research)
 from india_trader.upstox import INDICES
 
 
@@ -114,6 +115,59 @@ class RegimeFilterTests(unittest.TestCase):
             _candidate_params(100)
         self.assertFalse(_eligible({'trades':2,'net_avg_r':100,
                     'net_profit_factor':100,'net_max_drawdown_r':0},10))
+
+
+class SimplePlaybookTests(unittest.TestCase):
+    def test_just_four_simple_presets_no_mean_reversion_or_traps(self):
+        configs=simple_playbook_presets()
+        self.assertEqual(len(configs),4)
+        self.assertEqual({x['name'] for x in configs},
+                         {'ORB_TREND_1_5R','ORB_TREND_2R',
+                          'EMA_TREND_1_5R','EMA_TREND_2R'})
+        self.assertTrue(all(x['max_trades_per_day']==1 for x in configs))
+        self.assertTrue(all(set(x['strategies']).issubset(
+            {'EMA_8_21_CROSS','OPENING_RANGE_BREAKOUT'}) for x in configs))
+        self.assertTrue(all(x['max_fee_r']<=.25 for x in configs))
+
+    def test_futures_cost_screen_uses_known_entry_and_structural_risk(self):
+        intent={'day':'2026-04-10','market':'NIFTY','direction':'BULL',
+                'entry':25000.,'stop':24990.,'target':25020.,
+                'risk_points':10.,'strategy':'OPENING_RANGE_BREAKOUT',
+                'signal_time':'2026-04-10T09:40:01+05:30'}
+        self.assertEqual(_entry_cost_guard(intent,.25,'10:45:00'),
+                         'ESTIMATED_FUTURES_FEES_EXCEED_RISK_FRACTION')
+        wider={**intent,'stop':24900.,'target':25200.,'risk_points':100.}
+        self.assertIsNone(_entry_cost_guard(wider,.25,'10:45:00'))
+        too_late={**wider,'signal_time':'2026-04-10T11:00:01+05:30'}
+        self.assertEqual(_entry_cost_guard(too_late,.25,'10:45:00'),
+                         'LATE_SIGNAL_OUTSIDE_SIMPLE_WINDOW')
+
+    def test_simple_chronological_research_never_claims_scaling_safe(self):
+        start=dt.date(2025,10,1)
+        end=dt.date(2025,12,2)
+        days=[]
+        day=start
+        while day<=end:
+            if day.weekday()<5:days.append(day)
+            day+=dt.timedelta(days=1)
+        reader=FakeReader({INDICES['SENSEX']:[
+            candle for d in days for candle in synthetic_day(d)]})
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)
+            result=run_simple_edge_research(
+                start,end,'SENSEX',reader=reader,
+                cache_dir=folder/'cache',out=folder/'result.json',
+                min_train=3,min_validation=2,min_holdout=2)
+            self.assertEqual(result['precommitted_configurations'],4)
+            self.assertEqual(len(result['results']),4)
+            self.assertFalse(result['safe_to_scale'])
+            self.assertFalse(result['safe_to_deploy_automatically'])
+            self.assertIsNone(result['actual_futures_or_options_profit_inr'])
+            self.assertEqual(result['status'],'NO_SIMPLE_STRATEGY_PASSED_VALIDATION')
+            self.assertEqual(json.loads((folder/'result.json').read_text())['status'],
+                             result['status'])
+            self.assertTrue(any('ESTIMATED_FUTURES_FEES' in
+                str(x['train_rejections']) for x in result['results']))
 
 
 class WalkForwardTests(unittest.TestCase):
