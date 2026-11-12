@@ -29,7 +29,7 @@ def fake_metrics(trades=35, pf=1.3, net=3.5):
     }
 
 
-def fake_result(days, policy, slippage):
+def fake_result(sessions, days, policy, slippage):
     if policy is None:
         return {"excluded": {"NO_MARKET_CANDLES": 1},
                 "signals": 80, "rejections": {}, "metrics": fake_metrics()}
