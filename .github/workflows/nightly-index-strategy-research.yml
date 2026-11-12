@@ -1,0 +1,94 @@
+name: Nightly bounded index strategy research (no broker orders)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 17:30 UTC = 23:00 India time, Monday-Friday.
+    # GitHub scheduled jobs may run later than the nominal time.
+    - cron: "30 17 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-index-strategy-research
+  cancel-in-progress: false
+
+jobs:
+  bounded_research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check regression tests before optimization
+        run: python -m unittest discover -s tests -q
+
+      - name: Restore historical 5-minute candle cache
+        uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: research-upstox-index-candles-v1-${{ github.run_id }}
+          restore-keys: |
+            research-upstox-index-candles-v1-
+
+      - name: Run finite historical walk-forward (requires private market-data secret)
+        shell: bash
+        env:
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p trader/backtests
+          if [[ -z "${UPSTOX_ACCESS_TOKEN:-}" ]]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          Path('trader/backtests/nightly_research_status.json').write_text(
+              json.dumps({'status':'NOT_RUN_MISSING_UPSTOX_ACCESS_TOKEN',
+                          'reason':'Set GitHub Actions repository secret UPSTOX_ACCESS_TOKEN. No market data or results were fabricated.'},
+                         indent=2)+'\n',encoding='utf-8')
+          PY
+            echo "Historical research not run: UPSTOX_ACCESS_TOKEN repository secret is missing." >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+          END=$(TZ=Asia/Kolkata date -d 'yesterday' +%F)
+          START=$(TZ=Asia/Kolkata date -d "${END} - 720 days" +%F)
+          if [[ "${START}" < "2025-10-01" ]]; then START="2025-10-01"; fi
+
+          echo "Running bounded chart research from ${START} to ${END}."
+          python tools/india.py research-index-walk-forward \
+            --from-date "${START}" --to-date "${END}" \
+            --market AUTO --max-configs 96 --slippage-points 1 \
+            --out trader/backtests/nightly_research_status.json
+
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          summary=json.loads(Path('trader/backtests/nightly_research_status.json').read_text())
+          lines=[
+            '## Bounded index strategy research',
+            '',
+            'Status: '+summary['status'],
+            'Window: '+summary['from_date']+' to '+summary['to_date'],
+            'Trials completed: '+str(summary['trials_run']),
+            'Real trading automatically enabled: **No**',
+            'Actual after-tax futures/options profit verified: **No**',
+            '',
+            'This is a cost-adjusted FUTURES proxy on spot-index candles. '
+            'It cannot establish real brokerage-executable returns.'
+          ]
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as handle:
+            handle.write('\n'.join(lines)+'\n')
+          PY
+
+      - name: Preserve report even if research fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-index-research-report
+          path: trader/backtests/nightly_research_status.json
+          if-no-files-found: warn
+          retention-days: 30
