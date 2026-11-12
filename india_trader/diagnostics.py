@@ -21,6 +21,8 @@ def diagnose_paper_sessions(directory, day, market):
              'source':'LOCAL_PAPER_JOURNALS_NOT_REAL_ORDERS',
              'signals':0,'signals_by_strategy':{},'risk_plans':0,
              'credit_spread_opens':0,'long_option_fills':0,'closed_trades':0,
+             'credit_structure_rejections':0,'long_fallback_attempts':0,
+             'long_fallback_selections':0,'recent_structure_rejections':[],
              'net_realized_paper_pnl':0.,'pending_or_unresolved_sessions':0,
              'market_data_errors':0,'recent_market_data_errors':[],
              'rejections':[],'recent_risk_plans':[],
@@ -30,6 +32,7 @@ def diagnose_paper_sessions(directory, day, market):
     rejects=Counter()
     plans=[]
     errors=[]
+    structures=[]
     unresolved=0
     pnl=0.0
     for file in files:
@@ -58,7 +61,20 @@ def diagnose_paper_sessions(directory, day, market):
                               'index_target':stop.get('index_target'),
                               'index_risk_points':stop.get('index_risk_points'),
                               'index_reward_points':stop.get('index_reward_points'),
-                              'remaining_daily_risk':event.get('remaining_daily_risk_inr')})
+                              'remaining_daily_risk':event.get('remaining_daily_risk_inr'),
+                              'risk_budget':event.get('risk_budget'),
+                              'max_trade_loss_inr':event.get('max_trade_loss_inr')})
+            elif name=='STRUCTURE_REJECTED':
+                summary['credit_structure_rejections']+=1
+                if event.get('fallback')=='TRY_NON_EXPIRING_LONG_OPTION':
+                    summary['long_fallback_attempts']+=1
+                structures.append({'timestamp':event.get('timestamp'),
+                                   'structure':event.get('trade_structure'),
+                                   'reason':str(event.get('reason','UNKNOWN'))[:300],
+                                   'fallback':event.get('fallback')})
+            elif name=='OPTION_SELECTION':
+                if event.get('fallback_from_credit'):
+                    summary['long_fallback_selections']+=1
             elif name in ('SIGNAL_REJECTED','CONTRACT_FILTER_BLOCKED'):
                 reason=event.get('message') or event.get('reason') or 'UNKNOWN'
                 rejects[str(reason)[:500]]+=1
@@ -76,6 +92,7 @@ def diagnose_paper_sessions(directory, day, market):
     summary['signals_by_strategy']=dict(types)
     summary['risk_plans']=len(plans)
     summary['recent_risk_plans']=plans[-8:]
+    summary['recent_structure_rejections']=structures[-8:]
     summary['net_realized_paper_pnl']=round(pnl,2)
     summary['pending_or_unresolved_sessions']=unresolved
     summary['rejections']=[{'count':count,'reason':reason} for reason,count in rejects.most_common(12)]
