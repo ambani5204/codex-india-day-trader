@@ -36,6 +36,10 @@ The other ten folders in `.agents/skills/` cover scan → entry → exit → tim
 
 ## Full-day India options skill relationship
 
-Experimental Upstox paper-advanced considers long CE/PE or a same-expiry, fully hedged credit spread using real option-chain Greeks and bid/ask, not index prices as option premiums.
+On `PAPER_MODE=advanced`, range signals are classified **before** tradable Upstox contracts are selected. Bullish direction seeks long **CE** or a **bull put credit spread** (sell OTM PE + buy farther OTM PE); bearish direction seeks long **PE** or a **bear call credit spread** (sell OTM CE + buy farther OTM CE). No naked selling.
+
+When chain IV is below the configurable exploratory threshold (default 18%), only a long CE/PE is considered. Above the threshold, directional **BREAKOUT/TRAP/EMA** prefer a long option and then a hedged credit spread if the first structure fails. **FAKEOUT/MEAN_REVERSION** prefer a hedged credit spread then a long option. This is a strategy-priority heuristic, **not** a validated IV predictor and not a comparison of unrelated reward:risk ratios.
+
+All selected candidates must clear *their own* fee-adjusted R:R, bid-ask/depth, actual expiry, lot-size, risk and delayed paper-fill gates. Long CE/PE skip today's expiry; credit spreads use same-expiry short and hedge and block NEW same-day-expiry entries after 13:45 IST. Missing quotes/Greeks or a network failure must **not** be converted to fictional paper fills. Both structures may be rejected.
 
 See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
