@@ -129,8 +129,8 @@ def _eligible(metrics,minimum_trades,profit_factor=1.05):
 
 def _candidate_params(max_configs):
     """Finite, deterministic grid set before inspecting unseen holdout data."""
-    if not 1<=max_configs<=192:
-        raise ValueError('max_configs must be between 1 and 192')
+    if not 1<=max_configs<=96:
+        raise ValueError('max_configs must be between 1 and 96')
     generated=[]
     for basket,efficiency,body,target,min_rr in itertools.product(
         REGIME_STRATEGIES,(.25,.45),(.35,.65),(1.5,2.0,2.5),(1.2,1.5)):
