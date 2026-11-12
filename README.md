@@ -38,6 +38,14 @@ The Indian options adaptation now follows the **exit → budget → risk** desig
 
 This is **forward paper research**, not broker execution. Market jumps and stale/polled REST data can cause actual losses beyond the planned stop. Index delta is only a first-order approximation, and the code does not verify broker margin, actual hedge execution order, fill certainty or guaranteed spread close-out. None of the 2025–2026 index-only historical candidate signals is evidence of profitable option fills.
 
+### High-IV credit-spread rejection and bought-option fallback (paper only)
+
+The advanced engine's high-IV (`atm_iv_pct >= 18` by default) gate **first considers a same-expiry hedged credit spread**. If that spread cannot meet the current *defined-risk, liquidity, spread/depth, fee-adjusted reward:risk, and remaining-day budget constraints*, or it is **past the 13:45 IST expiry-day cutoff**, the signal can independently **consider buying a CE or PE in the next eligible non-expiring expiry**. That long alternative must pass its **own** strategy-specific stop and target, >=1.5 estimated **net** reward:risk, allowed premium allocation, actual delta and book depth, valid fresh option quote, whole-lot risk budget, and delayed-fill recheck. Otherwise it records a rejection and **does not trade**. The same-day short-selling cutoff and the restriction against long-option expiry-day entries remain unchanged.
+
+Each abandoned short spread is recorded as `STRUCTURE_REJECTED`, with its exact reason and `TRY_NON_EXPIRING_LONG_OPTION`. A successful alternate `OPTION_SELECTION` marks `fallback_from_credit=true`. These are **not fills**; the paper journal must contain `PAPER_BUY_FILLED` to count a long entry. `paper-diagnose` now displays `credit_structure_rejections`, `long_fallback_attempts`, `long_fallback_selections` and recent structure rejection reasons. This is an experimental branch, not a proven edge: a high-IV long option can lose from IV crush and theta despite an apparently favorable static delta-mapped target.
+
+The Nov 12, 2026 SENSEX log contained **9 index signals but zero fills**, with **6 rejections** after the expiry-day short-spread cutoff and **3** credit-spread screening rejections. Thus it does not establish that the stop loss alone was wrong. It predates the fallback and subsequent risk/stop improvements and cannot retroactively show the performance of the new engine.
+
 ### Diagnose why SENSEX/NIFTY paper entries were skipped
 
 A session with zero trades does not prove a stop-loss caused the rejection. Using a **second Termux session**, read your existing simulation journals without calling any broker API:
