@@ -148,6 +148,16 @@ def main(argv=None):
     idxbt.add_argument('--out',default='trader/backtests/index_intraday.json')
     idxbt.add_argument('--slippage-points',type=float,default=0.0,
                        help='Hypothetical adverse index points per entry and exit; default zero')
+    research=sub.add_parser('research-index-walk-forward',
+        help='Bounded training/validation/holdout optimization with sideways/trend filters and futures COST PROXY; NEVER deploys')
+    research.add_argument('--from-date',required=True,help='YYYY-MM-DD')
+    research.add_argument('--to-date',required=True,help='YYYY-MM-DD before today IST')
+    research.add_argument('--market',choices=['AUTO','NIFTY','SENSEX','BOTH'],default='AUTO')
+    research.add_argument('--cache-dir',default='trader/backtest_cache')
+    research.add_argument('--out',default='trader/backtests/index_research_walk_forward.json')
+    research.add_argument('--max-configs',type=int,default=96)
+    research.add_argument('--slippage-points',type=float,default=1.0,
+                          help='Adverse INDEX-POINT proxy on BOTH entry and exit')
     diag=sub.add_parser('paper-diagnose',help='Show exact local paper signal, stop, target and rejection reasons; read-only')
     diag.add_argument('--date',required=True,help='YYYY-MM-DD')
     diag.add_argument('--market',choices=['SENSEX','NIFTY'],required=True)
@@ -203,6 +213,25 @@ def dispatch(a):
               'rejected_signals':result['rejected_signals'],
               'options_net_pnl_inr':None,
               'results_path':a.out,'warning':result['warning']})
+        return 0
+    if a.cmd=='research-index-walk-forward':
+        from .research_optimizer import run_walk_forward_research
+        result=run_walk_forward_research(
+            a.from_date,a.to_date,a.market,cache_dir=a.cache_dir,out=a.out,
+            max_configs=a.max_configs,slippage_points=a.slippage_points)
+        dump({'kind':result['kind'],'status':result['status'],
+              'from_date':result['from_date'],'to_date':result['to_date'],
+              'market':result['market'],'trials_run':result['trials_run'],
+              'dates':result['dates'],
+              'baseline_by_split':result['baseline_by_split'],
+              'selection_without_holdout':result['selection_without_holdout'],
+              'selected_holdout':result['selected_holdout'],
+              'selected_holdout_stress':result['selected_holdout_stress'],
+              'top_research_candidates':result['top_research_candidates'],
+              'cost_model':result['cost_model'],
+              'safe_to_deploy_automatically':False,
+              'results_path':a.out,
+              'warning':result['warning']})
         return 0
     if a.cmd=='backtest-index-signals':
         from .historical_backtest import annual_signal_backtest
