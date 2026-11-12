@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+from statistics import mean, median
 from .core import IST
 from .paper_sim import money, option_fees
 from .upstox import UpstoxError, INDICES, EXCHANGES, normalize_expiry
@@ -45,11 +46,17 @@ def atr_5m(bars, period=14):
 
 
 def index_stop_plan(bars,signal,spot,now,atr_multiplier=1.5):
-    """Use ORB midpoint for opening-range entries, ATR for later setups.
+    """Strategy-specific invalidation/target from genuinely closed index bars.
 
-    Stop must invalidate the signal direction and remain positive.
-    For ORB at 09:35 there is not yet a full ATR(14), so we use the
-    *existing structural opening-range midpoint*, without lookahead.
+    ORB: breakout boundary with a volatility buffer; when the entire breakout
+    candle sits above/below the opening range, use that candle's extreme
+    (momentum-candle invalidation). ATR is NOT invented at 09:35.
+
+    EMA 8/21: last six bars' swing extremum with 0.2 ATR buffer, rejecting
+    extended entries rather than arbitrarily tightening the stop.
+
+    Mean reversion: last three bars' extreme with 0.2 ATR buffer; target
+    the preceding 20-bar mean (same lookback as the entry signal).
     """
     if not math.isfinite(spot) or spot<=0 or signal.get('direction') not in {'BULL','BEAR'}:
         raise UpstoxError('Invalid spot/direction for index stop')
@@ -59,25 +66,82 @@ def index_stop_plan(bars,signal,spot,now,atr_multiplier=1.5):
     if not math.isfinite(atr_multiplier) or atr_multiplier<=0:
         raise UpstoxError('ATR multiplier must be positive')
     side=signal['direction']
-    strategy=signal['strategy']
+    strategy=signal.get('strategy')
+    last=completed[-1]
     if strategy=='OPENING_RANGE_BREAKOUT':
         opening=[b for b in completed if dt.time(9,15)<=b.time.time()<dt.time(9,30)]
         if [b.time.time() for b in opening]!=[dt.time(9,15),dt.time(9,20),dt.time(9,25)]:
             raise UpstoxError('Opening range incomplete; cannot plan structural stop')
-        stop=(max(b.high for b in opening)+min(b.low for b in opening))/2
-        basis='OR_15_MIN_MIDPOINT'
+        high=max(b.high for b in opening)
+        low=min(b.low for b in opening)
+        width=high-low
+        if width<=0:
+            raise UpstoxError('Opening range has no valid width')
+        typical=median(b.high-b.low for b in opening)
+        buffer=max(.15*width,.25*typical)
+        if side=='BULL':
+            if spot<=high:
+                raise UpstoxError('ORB bullish close no longer above opening high')
+            if last.low>high+buffer:
+                stop=last.low-buffer
+                basis='ORB_BREAKOUT_CANDLE_LOW'
+            else:
+                stop=high-buffer
+                basis='ORB_OPENING_HIGH_RETEST'
+        else:
+            if spot>=low:
+                raise UpstoxError('ORB bearish close no longer below opening low')
+            if last.high<low-buffer:
+                stop=last.high+buffer
+                basis='ORB_BREAKOUT_CANDLE_HIGH'
+            else:
+                stop=low+buffer
+                basis='ORB_OPENING_LOW_RETEST'
         atr=atr_5m(completed) if len(completed)>=15 else None
-    else:
+        # The original US exit skill uses a pre-committed 2R target by default.
+        # It is a hypothetical projection, not an expected market move.
+        target_basis='ORB_2R_PROJECTION'
+        target=None
+    elif strategy=='EMA_8_21_CROSS':
         atr=atr_5m(completed)
-        stop=spot-(atr_multiplier*atr) if side=='BULL' else spot+(atr_multiplier*atr)
-        basis=f'ATR_5M_14_X_{atr_multiplier:g}'
-    gap=(spot-stop) if side=='BULL' else (stop-spot)
+        recent=completed[-6:]
+        buffer=.2*atr
+        stop=(min(b.low for b in recent)-buffer if side=='BULL' else
+              max(b.high for b in recent)+buffer)
+        basis='EMA_6_BAR_SWING_WITH_ATR_BUFFER'
+        target_basis='EMA_2R_TREND_PROJECTION'
+        target=None
+    elif strategy=='MEAN_REVERSION':
+        atr=atr_5m(completed)
+        recent=completed[-3:]
+        buffer=.2*atr
+        stop=(min(b.low for b in recent)-buffer if side=='BULL' else
+              max(b.high for b in recent)+buffer)
+        basis='MEAN_REVERSION_RECENT_EXTREME_WITH_ATR_BUFFER'
+        # Reference excludes the reversal bar, matching intraday_signal.
+        if len(completed)<21:
+            raise UpstoxError('Mean reversion needs 20 prior closed bars')
+        target=mean(b.close for b in completed[-21:-1])
+        target_basis='MEAN_REVERSION_20_BAR_MEAN'
+    else:
+        raise UpstoxError('Unknown strategy cannot choose a stop or target')
+    gap=spot-stop if side=='BULL' else stop-spot
     if not math.isfinite(gap) or gap<=0 or stop<=0:
-        raise UpstoxError('Structural/ATR stop must be beyond index price on loss side')
+        raise UpstoxError('Strategy invalidation stop is on the wrong side')
+    if strategy=='EMA_8_21_CROSS' and gap>2.5*atr:
+        raise UpstoxError('EMA entry overextended from real swing (>2.5 ATR); skip rather than tighten stop')
+    if target is None:
+        target=(spot+2*gap) if side=='BULL' else (spot-2*gap)
+    reward=target-spot if side=='BULL' else spot-target
+    if not math.isfinite(reward) or reward<=0 or target<=0:
+        raise UpstoxError('No valid favorable structural target for the setup')
     return {'index_spot':money(spot),'index_stop':money(stop),
-            'index_risk_points':money(gap),'basis':basis,
+            'index_risk_points':money(gap),'index_target':money(target),
+            'index_reward_points':money(reward),
+            'index_gross_reward_risk':round(reward/gap,3),
+            'basis':basis,'target_basis':target_basis,
             'atr_5m':money(atr) if atr is not None else None,
-            'warning':'Spot-price stop mapped via first-order delta; gamma/IV/theta can change option response'}
+            'warning':'Index invalidation is checked only on closed candles; options Greeks change; fill stops and targets are not guaranteed'}
 
 
 def _evaluate_one_lot(ask,bid,delta,lot_size,exchange,settings,index_plan,
@@ -94,7 +158,19 @@ def _evaluate_one_lot(ask,bid,delta,lot_size,exchange,settings,index_plan,
     # spread is part of the risk (no falsely cheap mid-price fills).
     index_gap=float(index_plan['index_risk_points'])
     stop=money(bid-abs(delta)*index_gap)
-    target=money(ask*(1+target_pct/100))
+    # Base the option exit on the chart setup's STRUCTURAL target. We can
+    # map first-order delta only; IV/theta/gamma can make actual option
+    # premiums differ. Do not silently fall back to an arbitrary 30% target
+    # if the setup has no favorable index target.
+    if 'index_reward_points' in index_plan:
+        gain=float(index_plan['index_reward_points'])
+        if not math.isfinite(gain) or gain<=0:
+            raise UpstoxError('Invalid chart-based target distance')
+        target=money(bid+abs(delta)*gain)
+    else:
+        # Compatibility for explicit standalone/manual pre-2026 test plans;
+        # the advanced trading worker always supplies index_reward_points.
+        target=money(ask*(1+target_pct/100))
     if stop<=0 or stop>=bid or stop>=entry or target<=entry:
         raise UpstoxError('Delta-mapped option stop outside valid premium range')
     estimated_stop_exit=money(stop*(1-slippage_bps/10000))
@@ -111,6 +187,8 @@ def _evaluate_one_lot(ask,bid,delta,lot_size,exchange,settings,index_plan,
     return {'entry':entry,'stop_bid':stop,'target_bid':target,
             'loss_per_lot':money(est_loss),'target_reward_per_lot':money(est_reward),
             'net_reward_risk':round(ratio,3),
+            'target_basis':('INDEX_STRUCTURE_DELTA' if 'index_reward_points' in index_plan
+                            else 'EXPLICIT_MANUAL_PREMIUM_TARGET'),
             'stop_pct_implied':round(100*(entry-stop)/entry,3),
             'target_pct_implied':round(100*(target-entry)/entry,3)}
 
