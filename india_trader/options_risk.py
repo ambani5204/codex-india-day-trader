@@ -17,6 +17,40 @@ from .paper_sim import money, option_fees
 from .upstox import UpstoxError, INDICES, EXCHANGES, normalize_expiry
 
 
+def adaptive_paper_risk(settings, realized_net=0.0, realized_losses=0.0):
+    """One percent of remaining paper equity, capped by DAILY remaining loss.
+
+    Advanced mode only; the original fixed-INR configuration and ORB runner
+    stay untouched. Percent is configurable from 0.10% to 1.00%, not unbounded.
+    A profitable trade does NOT restore previously lost daily loss allowance.
+    """
+    try:
+        capital=float(settings['capital_inr'])
+        daily_limit=float(settings['max_daily_loss_inr'])
+        percent=float(settings.get('advanced_risk_percent',1.0))
+        pnl=float(realized_net)
+        losses=float(realized_losses)
+    except (KeyError,TypeError,ValueError,OverflowError) as exc:
+        raise UpstoxError('Invalid adaptive risk settings') from exc
+    if not all(math.isfinite(v) for v in (capital,daily_limit,percent,pnl,losses)):
+        raise UpstoxError('Risk settings must be finite')
+    if capital<=0 or daily_limit<=0 or not .1<=percent<=1.0 or losses<0:
+        raise UpstoxError('Advanced risk must be 0.1–1.0% with positive capital and daily budget')
+    # Paper equity shrinks with a losing session; the daily loss limit never
+    # increases after profitable trades, even if paper equity is higher.
+    equity=max(0.0,capital+pnl)
+    remaining=max(0.0,daily_limit-losses)
+    raw=money(equity*percent/100.0)
+    cap=money(min(raw,remaining))
+    if cap<=0 or pnl<=-daily_limit:
+        raise UpstoxError('No remaining advanced paper trade risk allowance')
+    return {'mode':'ADVANCED_PERCENT_EQUITY',
+            'risk_percent':percent,'paper_equity_inr':money(equity),
+            'unconstrained_trade_risk_inr':raw,
+            'remaining_daily_loss_inr':money(remaining),
+            'trade_risk_cap_inr':cap}
+
+
 def _completed_today(bars, now):
     now=now.astimezone(IST)
     completed=sorted((b for b in bars if b.time.date()==now.date()
