@@ -238,7 +238,9 @@ def _metrics(trades):
             'average_r':round(sum_r/n,4) if n else None,
             'profit_factor_r':round(gross_win_r/gross_loss_r,4) if gross_loss_r else None,
             'max_drawdown_r':round(drawdown,4),
-            'gross_index_points':round(sum(t['index_points'] for t in trades),4),
+            # Never add SENSEX and NIFTY raw points into one meaningless figure.
+            'gross_index_points':(round(sum(t['index_points'] for t in trades),4)
+                                  if len({t['market'] for t in trades})<=1 else None),
             'exit_reasons':dict(Counter(t['exit_reason'] for t in trades))}
 
 
@@ -299,7 +301,7 @@ def backtest_index_intraday(start,end,market='AUTO',reader=None,
             'stop_and_target':'STATIC_CHART_POINTS_FROM_SIGNAL_CANDLE',
             'same_bar_stop_and_target':'CONSERVATIVE_STOP_FIRST',
             'gap_through_stop':'EXIT_AT_ADVERSE_BAR_OPEN',
-            'max_trades_per_day':max_trades,
+            'max_trades_per_market_day':max_trades,
             'cooldown_minutes':15,
             'session_flat_at':'15:10 IST',
             'minimum_chart_reward_risk_at_entry':min_chart_rr,
