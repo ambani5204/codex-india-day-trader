@@ -117,6 +117,11 @@ class LongOptionRiskTests(unittest.TestCase):
         self.assertEqual(p['symbol'],'BFO:SENSEX_1000_2026-11-13_CE')
         self.assertGreater(p['risk_plan']['quantity'],0)
         self.assertLessEqual(p['risk_plan']['estimated_stop_loss_including_charges'],500)
+        chain[0]['call_options']['market_data']['ask_qty']=20
+        chain[0]['call_options']['market_data']['bid_qty']=20
+        smaller=select_long_risk_managed(master,chain,'SENSEX','BULL',1000,
+                                         TODAY,CFG,plan(2),expiry)
+        self.assertEqual(smaller['risk_plan']['quantity'],20)
         chain[0]['call_options']['market_data']['ask_qty']=0
         with self.assertRaises(UpstoxError):
             select_long_risk_managed(master,chain,'SENSEX','BULL',1000,
