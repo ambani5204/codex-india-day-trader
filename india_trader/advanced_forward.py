@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .core import IST, parse_time
 from .intraday_lab import intraday_signal, select_credit_spread, spread_mark
+from .options_risk import index_stop_plan, select_long_risk_managed
 from .paper_sim import PaperEngine, journal_write
 from .upstox import (INDICES, UpstoxReader, UpstoxError,
                      load_today_master, select_atm, select_delta_contract,
@@ -85,6 +86,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
     api=reader or UpstoxReader()
     closed=0
     net=0.
+    loss_consumed=0.0  # Profitable trades do NOT replenish daily loss allowance.
     error_count=0
     last_bar=None
     cooldown_until=now
@@ -97,9 +99,21 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                 try:
                     if pos['kind']=='CREDIT':
                         chain=api.option_chain(INDICES[args.market],pos['contract']['expiry'])
-                        mark=spread_mark(pos['contract'],chain,args.market,now)
+                        # Check the actual closed index candle against the ORB/ATR
+                        # stop. Never infer a position exit from an unfinished bar.
+                        candle_list=api.candles(INDICES[args.market])
+                        closed_bars=[b for b in candle_list if b.time.date()==today and
+                                     b.time+dt.timedelta(minutes=5)<=now]
+                        index_close=None
+                        if closed_bars:
+                            latest=max(closed_bars,key=lambda b:b.time)
+                            age=(now-(latest.time+dt.timedelta(minutes=5))).total_seconds()
+                            if 0<=age<315:
+                                index_close=latest.close
+                        mark=spread_mark(pos['contract'],chain,args.market,now,index_close=index_close)
                         if mark['reason']:
                             net+=float(mark['net_pnl'])
+                            loss_consumed+=max(0.0,-float(mark['net_pnl']))
                             closed+=1
                             record({'event':'PAPER_TRADE_CLOSED','timestamp':now.isoformat(),
                                     'market':args.market,'symbol':f"SPREAD:{pos['contract']['option_type']}",
@@ -130,6 +144,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                             record(result)
                             if result['event']=='PAPER_TRADE_CLOSED':
                                 net+=result['net_pnl']
+                                loss_consumed+=max(0.0,-float(result['net_pnl']))
                                 closed+=1
                                 pos=None
                                 engine=None
@@ -146,7 +161,9 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                         break
                 else:
                     error_count=0
-            elif closed<int(settings['max_trades_per_day']) and net>-float(settings['max_daily_loss_inr']) and now>=cooldown_until:
+            elif (closed<int(settings['max_trades_per_day']) and
+                  loss_consumed<float(settings['max_daily_loss_inr']) and
+                  net>-float(settings['max_daily_loss_inr']) and now>=cooldown_until):
                 try:
                     bars=api.candles(INDICES[args.market])
                     # Store this candle as evaluated regardless of signal.
@@ -173,13 +190,23 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                         if iv is None:
                             raise UpstoxError('No reliable IV; no paper entry')
                         kind='CREDIT' if iv>=args.credit_iv_threshold else 'LONG'
+                        remaining=float(settings['max_daily_loss_inr'])-loss_consumed
+                        stop_plan=index_stop_plan(bars,signal,last.close,now)
+                        record({'event':'RISK_PLAN','timestamp':now.isoformat(),
+                                'index_stop_plan':stop_plan,
+                                'remaining_daily_risk_inr':round(remaining,2),
+                                'max_trade_loss_inr':settings['max_loss_per_trade_inr']})
                         record({'event':'STRATEGY_DECISION','timestamp':now.isoformat(),
                                 'strategy':signal['strategy'],'trade_structure':kind,
                                 'atm_iv_pct':round(iv,2),
                                 'iv_threshold_pct':args.credit_iv_threshold})
                         if kind=='CREDIT':
+                            if dt.date.fromisoformat(expiry)==today and now.time()>dt.time(13,45):
+                                raise UpstoxError('No new expiry-day short spreads after 13:45 IST')
                             selection=select_credit_spread(records,chain,args.market,signal['direction'],
-                                                           last.close,today,settings,expiry=expiry)
+                                                           last.close,today,settings,expiry=expiry,
+                                                           remaining_daily_loss=remaining,
+                                                           min_reward_risk=.25,index_stop_plan=stop_plan)
                             # Assume both legs fill at visible bid/ask instantaneously:
                             # explicitly optimistic, not an exchange fill or margin validation.
                             record({'event':'PAPER_SPREAD_OPEN','timestamp':now.isoformat(),
@@ -194,15 +221,21 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                                     'BUY' if signal['direction']=='BULL' else 'SELL',
                                                     last.close,today)
                             chain_l=api.option_chain(INDICES[args.market],preferred['expiry'])
-                            contract=select_delta_contract(records,chain_l,args.market,
-                                      'BUY' if signal['direction']=='BULL' else 'SELL',
-                                      last.close,today,settings,stop_pct=15,fee_profile='UPSTOX')
-                            qty=contract['lot_size']
+                            contract=select_long_risk_managed(records,chain_l,args.market,
+                                      signal['direction'],last.close,today,settings,
+                                      stop_plan,preferred['expiry'],target_pct=30,
+                                      min_rr=1.5,max_lots=3,
+                                      remaining_daily_loss=remaining)
+                            risk_plan=contract['risk_plan']
+                            qty=risk_plan['quantity']
                             engine=PaperEngine(contract['symbol'],qty,settings['capital_inr'],
                                   settings['max_loss_per_trade_inr'],
                                   max_allocation_fraction=settings['max_allocation_fraction'],
-                                  stop_pct=15,target_pct=30,fee_profile='UPSTOX',
-                                  flat_by=dt.time(15,10))
+                                  fee_profile='UPSTOX',flat_by=dt.time(15,10),
+                                  planned_stop=risk_plan['stop_bid'],
+                                  planned_target=risk_plan['target_bid'],
+                                  min_net_reward_risk=1.5,
+                                  remaining_daily_loss=remaining)
                             q=api.full_quote(contract['instrument_key'])
                             result=engine.process(q,signal=True,reason=signal['strategy'],
                                                   now=now,max_age_seconds=args.max_quote_age_seconds)
