@@ -36,9 +36,9 @@ def plan(index_gap=2):
 
 def credit_fixture():
     chain=[];master=[]
-    for strike,delta,bid,ask in ((900,-.25,48,48.48),
-                                 (850,-.08,8,8.05),
-                                 (800,-.03,1,1.01)):
+    for strike,delta,bid,ask in ((900,-.25,24.05,24.29),
+                                 (870,-.08,5,5.05),
+                                 (860,-.03,1,1.01)):
         key=f'BSE_FO|{strike}P'
         chain.append({'expiry':TODAY.isoformat(),'strike_price':strike,
                       'put_options':{'instrument_key':key,
@@ -154,6 +154,7 @@ class ShortSpreadRiskTests(unittest.TestCase):
                                CFG,expiry=TODAY.isoformat(),
                                remaining_daily_loss=500,min_reward_risk=.25)
         self.assertLessEqual(p['estimated_max_expiry_loss_after_fees'],500)
+        self.assertLessEqual(p['estimated_stop_net_loss'],500)
         self.assertGreaterEqual(p['net_reward_risk_at_credit_stop'],.25)
         self.assertGreater(p['estimated_target_net_profit'],0)
         self.assertGreater(p['short_strike'],p['long_strike'])
