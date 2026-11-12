@@ -13,7 +13,7 @@ import datetime as dt
 import math
 from .core import IST
 from .paper_sim import money, option_fees
-from .upstox import UpstoxError, INDICES, EXCHANGES, normalize_expiry, select_atm
+from .upstox import UpstoxError, INDICES, EXCHANGES, normalize_expiry
 
 
 def _completed_today(bars, now):
@@ -97,7 +97,6 @@ def _evaluate_one_lot(ask,bid,delta,lot_size,exchange,settings,index_plan,
     target=money(ask*(1+target_pct/100))
     if stop<=0 or stop>=bid or stop>=entry or target<=entry:
         raise UpstoxError('Delta-mapped option stop outside valid premium range')
-    entry_fees=option_fees(entry,stop,quantity,exchange,'UPSTOX')['total']
     estimated_stop_exit=money(stop*(1-slippage_bps/10000))
     est_loss=(entry-estimated_stop_exit)*quantity+option_fees(entry,estimated_stop_exit,quantity,exchange,'UPSTOX')['total']
     est_target_exit=money(target*(1-slippage_bps/10000))
@@ -199,10 +198,11 @@ def select_long_risk_managed(records,chain,market,direction,spot,today,settings,
             if not (0<bid<=ask and 200*(ask-bid)/(ask+bid)<=2
                     and bid_qty>=lot and ask_qty>=lot):
                 continue
+            # Size down to visible executable depth instead of rejecting
+            # an otherwise valid smaller whole-lot position.
+            depth_lots=min(int(max_lots),bid_qty//lot,ask_qty//lot)
             plan=size_long_option(ask,bid,delta,lot,exchange,settings,index_plan,
-                     target_pct,min_rr,max_lots,remaining_daily_loss)
-            if bid_qty<plan['quantity'] or ask_qty<plan['quantity']:
-                continue
+                     target_pct,min_rr,depth_lots,remaining_daily_loss)
             options.append((abs(abs(delta)-.5),abs(strike-spot),-plan['net_reward_risk'],
                             {'instrument_key':key,'expiry':expiry,'strike':strike,
                              'lot_size':lot,'market':market,'exchange':exchange,
