@@ -6,6 +6,28 @@ This project adapts the 11 skill *roles* from [Jakeschincariol/day-trader-skill]
 
 It is intended for **educational analysis** and controlled manual/paper workflows, not guaranteed profitability. Historical tests have lookahead and selection-bias risk unless verified against accurate, timestamped, independently collected market data.
 
+## Index-only intraday strategy test — NO options or put/call
+
+Use this when you want to validate whether the three opening-range patterns (BREAKOUT, FAKEOUT, TRAP) and the unchanged EMA/mean-reversion setups have predictive value **on the 5-minute NIFTY/SENSEX chart itself**, without option chains, expiry selection, theta, spreads, Greeks, or broker orders.
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+bash backtest-index-intraday-year.sh
+```
+
+This uses the existing `trader/backtest_cache` downloaded by `backtest-year.sh` for **1 Oct 2025 through 1 Oct 2026** (and downloads only missing chunks with your saved private Upstox Analytics Token). It follows the existing weekday schedule: Mon/Tue/Fri NIFTY, Wed/Thu SENSEX. Results include **WIN/LOSS**, **win rate**, **profit factor in normalized risk units**, **total/average R**, **max drawdown in R**, **chart points**, and **separate results for each of the five patterns**, monthly and by index.
+
+**Exact methodology:**
+- Same `intraday_signal` and `index_stop_plan` functions as the advanced paper worker. Confirm the signal only after a closed five-minute bar, enter at the **NEXT** bar's historical **OPEN** (not the signal close).
+- Require a valid structural stop and target and at least **1.5:1 gross chart-price R:R calculated using the NEXT open**; skip if a gap makes the setup invalid or the target too near. One simulated directional position at a time, maximum three entries per market day and 15 minutes of cooldown after a closed trade.
+- Check each subsequent five-minute bar high/low. If stop and target are both within one candle, assume **stop first**. A gap through the stop is exited at the adverse next bar **open**. Exit open trades at **15:10 IST** using that bar's open. Refuse incomplete days, including missing exit bars.
+- Default assumed index slippage is **0 points**, because the untradeable index has no executable bid/ask. To stress-test: `INDEX_SLIPPAGE_POINTS=1 bash backtest-index-intraday-year.sh`. This arbitrarily subtracts 1 index point per side and must **NOT** be interpreted as realistic futures/options execution cost.
+
+The complete journal is saved to `trader/backtests/index_intraday_2025-10-01_to_2026-10-01.json`. The terminal shows summary results; the JSON contains every hypothetical signal, exit, outcome, month, market and any excluded session.
+
+**Important:** NIFTY and SENSEX *indices themselves are not tradable*. This is chart-only research, **not** a cash equities, futures or options trading backtest. There are **no INR profits or commission/margin assumptions**; aggregate NIFTY and SENSEX raw point totals are intentionally not summed. A profitable index-direction test does **not** establish a profitable CE/PE strategy: option premiums also depend on delta/gamma, IV, theta, spread, taxes and fill prices.
+
 ## Historical replay: 1 October 2025 – 1 October 2026
 
 On Android Termux **outside market hours**:
