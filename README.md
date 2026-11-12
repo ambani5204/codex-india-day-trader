@@ -29,12 +29,25 @@ Official historical API docs: https://upstox.com/developer/api-documentation/v3/
 ### New option risk controls in `PAPER_MODE=advanced`
 
 The Indian options adaptation now follows the **exit → budget → risk** design of the original US toolkit:
-- **Long option exit plan:** An opening-range breakout uses the 09:15–09:30 **index midpoint** as the underlying invalidation level. Later EMA/mean-reversion signals use **1.5 × ATR(14) calculated from closed 5-minute index candles**. With insufficient ATR history, no non-ORB entry. The index-stop distance is mapped to a *hypothetical* option stop using the live option delta (first-order approximation only; not a known future option price).
-- **Long option size:** Current Upstox CE/PE bid/ask and quote depth, delta 0.40–0.65, whole current exchange lots (up to three), estimated 5 bps adverse entry/exit slippage, fees and an estimated 30% premium target are checked together. The minimum target **net reward-to-risk is 1.5**. Unaffordable full lots and net-negative/poor-reward candidates are **skipped**, not made artificially tight. The worker re-checks risk, stop and target after the delayed paper fill; it records no buy if the original limits no longer fit.
+- **Strategy-specific long option stop:** ORB tests the breakout high/low with a volatility buffer; if the entire confirmed breakout candle lies beyond that boundary, its own low/high is the invalidation point. An EMA 8/21 crossover uses the latest **six-candle swing extreme** plus a **0.2 × ATR(14)** buffer, and rejects entries extended more than 2.5 ATR from that stop. Mean reversion uses the **last three bars' extreme**, also buffered by 0.2 ATR. The ATR uses only completed five-minute index bars. An index stop is mapped to an **indicative** option bid using live option delta, and the index invalidation is checked on completed bars (not ticks).
+- **Strategy-specific target and position size:** ORB and EMA use a planned **2R index-price projection**; mean reversion targets the **previous 20-bar mean**, matching the signal logic. The target is mapped to an indicative option bid using current delta; **advanced mode no longer assumes an arbitrary 30% option-premium target**. Current Upstox CE/PE bid/ask and displayed depth, delta 0.40–0.65, whole current exchange lots (up to three), estimated 5 bps adverse slippage and fees determine whether net expected reward/risk is at least **1.5**. This is a filter, not a forecast. Unaffordable full lots and net-negative/poor-reward setups are **skipped**, never forced with an artificially tight stop. The worker rechecks all limits after a delayed estimated fill.
 - **Credit spreads:** Never naked. A sold OTM CE/PE must be hedged with a farther-OTM same-expiry long leg. Both **spread width minus received credit plus estimated four-leg fees** AND **the planned buy-to-close credit-stop loss including fees** must independently fit the **₹500 maximum** (or a smaller remaining daily allowance). An estimated target/stop **net reward-to-risk of at least 0.25** is required, with a strictly positive estimated target profit; this differs from the 1.5 long-buy threshold because payoff distributions differ. Expiry-day new spread entries are blocked after 13:45 IST, with a time-exit target by 14:45. The index stop can trigger an earlier paper exit.
 - **Daily protection:** Max modeled risk **₹500 per trade**, max modeled cumulative **₹1,500 loss** and at most **three closed trades** per session day, with a 15-minute cooldown. A winning trade does **not** restore a previously consumed daily loss budget. If an exit quote is missing, no fictitious fill is recorded; an unresolved position blocks future sessions.
 
 This is **forward paper research**, not broker execution. Market jumps and stale/polled REST data can cause actual losses beyond the planned stop. Index delta is only a first-order approximation, and the code does not verify broker margin, actual hedge execution order, fill certainty or guaranteed spread close-out. None of the 2025–2026 index-only historical candidate signals is evidence of profitable option fills.
+
+### Diagnose why SENSEX/NIFTY paper entries were skipped
+
+A session with zero trades does not prove a stop-loss caused the rejection. Using a **second Termux session**, read your existing simulation journals without calling any broker API:
+
+```bash
+cd ~/codex-india-day-trader
+python tools/india.py paper-diagnose --date 2026-11-12 --market SENSEX
+```
+
+Look at `signals`, `rejections`, `recent_risk_plans`, and `closed_trades`. If no index signals were detected, the stop price was not even evaluated. `SIGNAL_REJECTED` messages identify the actual filter, including no favorable structural target, lack of minimum net reward/risk, insufficient option depth, or full-lot loss over ₹500. Open sessions appear as `pending_or_unresolved_sessions`; this is normal until the worker has finished and written a session summary.
+
+The documented stop/target refinements affect **new** `PAPER_MODE=advanced` processes started after `git pull`. They do not retroactively modify prior journal records or the preceding year's index-only candidate-signal report. New trading signals stop at 14:40 IST; open positions may be monitored later. Keep the running worker until the session completes unless diagnosing a safe shutdown outside market hours.
 
 ## EXPERIMENTAL: All-session options paper trading (buy and hedged sell)
 
