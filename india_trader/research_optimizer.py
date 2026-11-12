@@ -20,9 +20,9 @@ from pathlib import Path
 
 from .core import IST
 from .historical_backtest import load_historical_index
-from .index_intraday_backtest import simulate_index_day
+from .index_intraday_backtest import simulate_index_day, _LazyHistoricalReader
 from .schedule import market_for_day
-from .upstox import INDICES, UpstoxReader, UpstoxError
+from .upstox import INDICES
 
 STT_CHANGE=dt.date(2026,4,1)
 NIFTY_LOT_CHANGE=dt.date(2026,1,1)
@@ -232,7 +232,7 @@ def run_walk_forward_research(start,end,market='AUTO',reader=None,
         not isinstance(v,int) or v<1 for v in
         (min_train,min_validation,min_holdout)):
         raise ValueError('Invalid bounded research/sampling settings')
-    reader=reader or UpstoxReader()
+    reader=reader or _LazyHistoricalReader()
     sessions=_load_sessions(start,end,market,reader,cache_dir)
     splits=_period_days(set(x['day'] for x in sessions))
 
