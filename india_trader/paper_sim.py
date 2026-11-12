@@ -129,7 +129,8 @@ class PaperEngine:
     def __init__(self, symbol, quantity, capital, max_trade_loss, exchange=None,
                  stop_pct=15.0,target_pct=30.0,max_spread_pct=2.0,slippage_bps=5.0,
                  latency_ms=750, max_allocation_fraction=0.25, fee_profile="ZERODHA",
-                 flat_by=time(15,20)):
+                 flat_by=time(15,20), planned_stop=None, planned_target=None,
+                 min_net_reward_risk=None, remaining_daily_loss=None):
 
         self.symbol=symbol
         if fee_profile not in {'ZERODHA','UPSTOX'}:raise ValueError('Unsupported brokerage profile')
@@ -147,6 +148,10 @@ class PaperEngine:
         self.max_spread_pct=max_spread_pct; self.slippage_bps=slippage_bps
         self.latency_ms=latency_ms
         self.flat_by=flat_by
+        self.planned_stop=planned_stop
+        self.planned_target=planned_target
+        self.min_net_reward_risk=min_net_reward_risk
+        self.remaining_daily_loss=remaining_daily_loss
         self.position=None;self.pending=None;self.events=[];self.last_quote=None
 
     def process(self, quote, signal=False, reason='MANUAL', now=None, max_age_seconds=None):
@@ -198,15 +203,33 @@ class PaperEngine:
             return self._event({'event':ev,'reason':'INSUFFICIENT_VISIBLE_DEPTH',
                                 'timestamp':quote.timestamp.isoformat()})
         if direction=='BUY':
-            stop=money(px*(1-self.stop_pct/100));target=money(px*(1+self.target_pct/100))
-            approx_fees=option_fees(px,stop,self.quantity,self.exchange,self.fee_profile)['total']
-            expected_loss=(px-stop)*self.quantity+approx_fees
-            if px*self.quantity > self.capital*self.max_allocation_fraction or expected_loss>self.max_trade_loss:
+            stop=money(self.planned_stop) if self.planned_stop is not None else money(px*(1-self.stop_pct/100))
+            target=money(self.planned_target) if self.planned_target is not None else money(px*(1+self.target_pct/100))
+            if stop<=0 or stop>=px or target<=px:
+                return self._event({'event':'ENTRY_REJECTED','reason':'STOP_OR_TARGET_INVALID_AFTER_FILL',
+                                    'timestamp':quote.timestamp.isoformat()})
+            # Recalculate after the delayed fill: neither a worse fill nor
+            # additional fees may silently exceed the user risk budget.
+            stop_fees=option_fees(px,stop,self.quantity,self.exchange,self.fee_profile)['total']
+            expected_loss=(px-stop)*self.quantity+stop_fees
+            effective_cap=min(self.max_trade_loss,self.remaining_daily_loss
+                              if self.remaining_daily_loss is not None else self.max_trade_loss)
+            if px*self.quantity > self.capital*self.max_allocation_fraction or expected_loss>effective_cap:
                 return self._event({'event':'ENTRY_REJECTED','reason':'CAPITAL_OR_MAX_LOSS_LIMIT',
                                     'premium_outlay':money(px*self.quantity),'stop_loss_with_estimated_fees':money(expected_loss),
+                                    'risk_cap':money(effective_cap),'timestamp':quote.timestamp.isoformat()})
+            target_fees=option_fees(px,target,self.quantity,self.exchange,self.fee_profile)['total']
+            reward=(target-px)*self.quantity-target_fees
+            ratio=reward/expected_loss if expected_loss>0 else 0.0
+            if self.min_net_reward_risk is not None and (reward<=0 or ratio<self.min_net_reward_risk):
+                return self._event({'event':'ENTRY_REJECTED','reason':'NET_REWARD_RISK_TOO_LOW_AFTER_FILL',
+                                    'net_reward_risk':round(ratio,3),
+                                    'minimum':self.min_net_reward_risk,
                                     'timestamp':quote.timestamp.isoformat()})
             self.position={'buy_price':px,'buy_time':quote.timestamp.isoformat(),'quantity':self.quantity,
-                           'stop_price':stop,'target_price':target,'entry_spread_pct':round(spread_pct,4)}
+                           'stop_price':stop,'target_price':target,
+                           'planned_net_rr':round(ratio,3),
+                           'entry_spread_pct':round(spread_pct,4)}
             return self._event({'event':'PAPER_BUY_FILLED','timestamp':quote.timestamp.isoformat(),
                                 'price':px,'quantity':self.quantity,'stop':stop,'target':target,
                                 'spread_pct':round(spread_pct,4),'simulated':True})
