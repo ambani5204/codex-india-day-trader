@@ -53,6 +53,16 @@ class DaywiseAndDeltaTests(unittest.TestCase):
             select_delta_contract(records(), [call('NSE_FO|CE1', 26000, 0.5, ask=400, bid=399)],
                                   'NIFTY', 'BUY', 26000, self.day, self.risk)
 
+    def test_rejection_reports_stop_loss_reason_not_just_generic_block(self):
+        with self.assertRaises(UpstoxError) as captured:
+            select_delta_contract(
+                records(), [call('NSE_FO|CE1', 26000, 0.5, ask=100, bid=99.9)],
+                'NIFTY', 'BUY', 26000, self.day, self.risk)
+        error=str(captured.exception)
+        self.assertIn('stop_loss_limit=1', error)
+        self.assertIn('loss_limit=₹500.00', error)
+        self.assertIn('minimum modeled stop loss', error)
+
     def test_rejects_missing_delta_or_depth(self):
         with self.assertRaisesRegex(UpstoxError, 'No contract passed'):
             select_delta_contract(records(), [call('NSE_FO|CE1', 26000, 0.5, quantity=10)],
