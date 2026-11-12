@@ -109,11 +109,19 @@ def run_session(day: dt.date, market: str):
     log_path = LOG_DIR / ('upstox_' + market.lower() + '.log')
     write_status('RUNNING', market=market, message='Upstox paper session in progress')
     print(f'Started {market} paper trading. Log: {log_path}', flush=True)
+    mode=os.environ.get('PAPER_MODE','orb').strip().lower()
+    if mode not in ('orb','advanced'):
+        raise RuntimeError('PAPER_MODE must be orb or advanced')
     try:
-        result = command('paper-upstox', '--market', market, '--lots', '1',
-                         '--selector', 'delta', '--delta-min', '0.40',
-                         '--delta-max', '0.65', '--target-delta', '0.50',
-                         '--fee-profile', 'UPSTOX', log=log_path)
+        if mode=='advanced':
+            print('Experimental all-day multi-strategy paper mode (no broker orders)',flush=True)
+            result=command('paper-advanced','--market',market,
+                           '--poll-seconds','30','--cooldown-minutes','15',log=log_path)
+        else:
+            result=command('paper-upstox', '--market', market, '--lots', '1',
+                           '--selector', 'delta', '--delta-min', '0.40',
+                           '--delta-max', '0.65', '--target-delta', '0.50',
+                           '--fee-profile', 'UPSTOX', log=log_path)
         print(f'{market} paper session ended (code {result}).', flush=True)
     finally:
         sync_journals(LOG_DIR / 'paper_upstox', LOG_DIR / 'paper.sqlite3')
