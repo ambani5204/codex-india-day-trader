@@ -8,7 +8,7 @@ The original skills are *independent capabilities*, not eleven autonomous tradin
 
 | Skill | Indian adaptation | Automated in experimental paper-advanced? |
 |---|---|---|
-| trader-scanner | Scan closed 5-minute NIFTY/SENSEX for ORB, EMA 8/21 crosses, restrained mean reversion | Yes |
+| trader-scanner | Scan closed 5-minute NIFTY/SENSEX for BREAKOUT / FAKEOUT / TRAP plus EMA 8/21 and mean reversion | Yes |
 | trader-news | Indian macro/NSE/BSE headlines and exchange announcements with sources | No — separate manual RSS research; not an unverified auto-signal |
 | trader-entry | Verified closed candle + Upstox actual option-chain Greeks/strike/expiry/spread/depth | Yes |
 | trader-exit | Long-option stop/target/time exit; hedged spread credit stop/target/time exit | Yes — paper quote-based, not broker protected |
@@ -19,6 +19,20 @@ The original skills are *independent capabilities*, not eleven autonomous tradin
 | trader-alerts | REST quote polling while position is open for stop/target/time events | Yes internally; NOT reliable push alerts |
 | trader-analyst | Earnings/financial disclosures for Indian listed companies | Manual CSV; not directly relevant to index option intraday signals |
 | trader-pelosi | India analogue: publicly available SEBI/stock-exchange insider disclosures | Manual CSV; not an index-options intraday execution driver |
+
+## Three-way opening-range strategy (new advanced mode only)
+
+The reference window is exactly **09:15–09:30 IST** (three completed 5-minute candles), and all classification is made from completed 5-minute bars with a 90-second freshness check; no historical future candles or intrabar breakouts. Both index direction and option side follow the signal:
+
+| Pattern | Closed-candle evidence | Bullish option structure | Bearish option structure | Planned index stop / target |
+|---|---|---|---|---|
+| BREAKOUT | First full candle CLOSES beyond high/low with a small range buffer | Buy CE or sell hedged PE credit | Buy PE or sell hedged CE credit | Breakout candle extreme or OR boundary retest; target projected 2R |
+| FAKEOUT | Wick sweeps high/low, candle closes back inside and rejects the move, no earlier breakout close | Lower sweep → CE / hedged PE credit | Upper sweep → PE / hedged CE credit | Beyond actual wick extreme; target OR midpoint |
+| TRAP | Actual 1–3 previous candle CLOSES beyond opening range then current bar CLOSES back inside | Failed downside close → CE / hedged PE credit | Failed upside close → PE / hedged CE credit | Beyond failed breakout episode extreme; target opposite range boundary |
+
+Candidate structures use separate expected payoffs. A **net R:R >= 1.5** is required for buying options and **net target/credit-stop R:R >= 0.25** for hedged credits. A high ratio alone cannot certify profitability. Higher-IV credit selling is *only a candidate regime heuristic*, not an empirically established edge. The same-day expiry short-credit entry cutoff remains **13:45 IST**; bought CE/PE always use the first eligible future expiry. Minimum lots, real available depth, fees, slippage, adaptive percentage equity budget, daily loss allowance and stale quote guards remain in force; zero trades is a valid result.
+
+The last available annual index replay from 1 October 2025 through 1 October 2026 predated this three-pattern change; **the prior counts and absent option P&L are NOT a backtest of this updated strategy**. New test coverage includes fakeout versus trap, reversal direction, no lookahead, structural stops/targets, selection priority and next-expiry contracts. All executions are hypothetical.
 
 ## Opt-in test on Android
 
@@ -33,7 +47,7 @@ PAPER_MODE=advanced bash live-paper-android.sh
 
 The launcher reuses a validated locally saved Upstox Analytics Token. It waits for the next weekday at 09:15 IST and selects Mon/Tue/Fri NIFTY, Wed/Thu SENSEX. It uses REST snapshots about every 30 seconds, looks for **new 5-minute close signals** between 09:35 and 14:40 IST, monitors existing paper positions, and can take multiple paper trades **up to configured daily limits** (typically three) if valid. A cooldown of 15 minutes follows each closed trade. A day with no signals or no qualifying contracts must result in **zero trades**.
 
-**Experimental IV regime gate:** If chain IV is at least 18% the engine **considers** a defined-risk credit spread; otherwise it considers a long CE/PE. The threshold is illustrative, not calibrated, not a predictor of profit. On a Sensex expiry day, the short spread may use the current expiry but targets a **14:45 IST** modeled exit; long options continue to exclude same-day expiry by default. Long options seek a time exit by 15:10. If quote delivery fails near an exit, the journal records **UNRESOLVED**; there is no fictional fill. Stops are not guaranteed.
+**Experimental IV and setup playbook:** When chain IV is below 18% the engine considers a long CE/PE. Above that exploratory threshold, BREAKOUT/TRAP/EMA favor a long CE/PE first, and FAKEOUT/MEAN_REVERSION favor a defined-risk hedged credit spread first; the other eligible structure is tried only when its own fee-adjusted risk, expiry and quote rules pass. Breakout trades go with the breached side; fakeout and trap reverse the failed side. The threshold is illustrative, not calibrated, not a predictor of profit. On a Sensex expiry day, the short spread may use the current expiry but targets a **14:45 IST** modeled exit; long options continue to exclude same-day expiry by default. Long options seek a time exit by 15:10. If quote delivery fails near an exit, the journal records **UNRESOLVED**; there is no fictional fill. Stops are not guaranteed.
 
 **A credit spread is NOT naked option selling.** Bullish => sell OTM put + buy lower-strike put; bearish => sell OTM call + buy higher-strike call. Both legs use live bid/ask/quantity and the same expiry. Theoretical maximum loss at expiry is spread width less credit, plus estimated charges, but executable prices, early unwind losses, actual margin, penalties and exchange settlement are **not** verified. We do not recommend copying paper positions directly into a live brokerage order.
 
