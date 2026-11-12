@@ -72,16 +72,17 @@ def _suggestions(rows, complete_sessions):
 def monitor_forward_simple(start=FROZEN_FORWARD_START, end=None,
                            market="AUTO", reader=None,
                            cache_dir="trader/backtest_cache", out=None,
-                           slippage_points=1.0):
+                           slippage_points=1.0, _asof_date=None):
     if isinstance(start, str):
         start = dt.date.fromisoformat(start)
     if start != FROZEN_FORWARD_START:
         raise ValueError("Forward start is fixed at 2026-11-13; do not shift it")
+    today = _asof_date or dt.datetime.now(IST).date()
     if end is None:
-        end = dt.datetime.now(IST).date() - dt.timedelta(days=1)
+        end = today - dt.timedelta(days=1)
     if isinstance(end, str):
         end = dt.date.fromisoformat(end)
-    if end >= dt.datetime.now(IST).date():
+    if end >= today:
         raise ValueError("Do not use today's possibly unfinished session")
     if end < start - dt.timedelta(days=1) or (end - start).days > 730:
         raise ValueError("Forward range must cover 0..730 past days from freeze")
