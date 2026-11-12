@@ -317,6 +317,11 @@ def run_simple_edge_research(start,end,market='AUTO',reader=None,
              'settings':{k:list(v) if isinstance(v,tuple) else v
                          for k,v in policy.items()},
              'train':train['metrics'],'validation':validation['metrics'],
+             'train_candidate_signals':train['signals'],
+             'validation_candidate_signals':validation['signals'],
+             # First blocking reason is recorded for each signal; these are
+             # not independent filter sensitivities and cannot be summed
+             # as an estimate of how many orders would have filled.
              'train_rejections':train['rejections'],
              'validation_rejections':validation['rejections'],
              'passed_train':train_pass,'passed_validation':valid_pass,
@@ -327,9 +332,12 @@ def run_simple_edge_research(start,end,market='AUTO',reader=None,
             score=min(train['metrics']['net_avg_r'],
                       validation['metrics']['net_avg_r'])
             qualified.append((score,row,policy))
+        reasons=sorted(validation['rejections'].items(),
+                       key=lambda item:(-item[1],item[0]))
         print('Simple research:',policy['name'],
               'train',train['metrics']['trades'],
               'validation',validation['metrics']['trades'],
+              'validation_top_blocks',dict(reasons[:5]),
               'passed' if train_pass and valid_pass else 'failed',
               flush=True)
     chosen=None
@@ -353,6 +361,7 @@ def run_simple_edge_research(start,end,market='AUTO',reader=None,
       'status':status,'from_date':start.isoformat(),'to_date':end.isoformat(),
       'market':market,'precommitted_configurations':len(results),
       'rules':'Opening-range breakout OR EMA 8/21, one chart trade per day; no sideways entries when recent efficiency is too low; exclude if expected transaction cost >25% of stop risk',
+      'diagnostic_note':'The first rejection recorded is the first failing filter, not all possible reasons. The 2025-2026 validation dates were examined during development; this is diagnostic evidence, NOT new out-of-sample evidence.',
       'splits':{k:{'start':min(v).isoformat(),'end':max(v).isoformat(),
                     'weekday_dates':len(v)} for k,v in splits.items()},
       'results':results,
