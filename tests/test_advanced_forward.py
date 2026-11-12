@@ -172,6 +172,7 @@ class AdvancedWorkerTests(unittest.TestCase):
             contract=next(x['contract'] for x in events if x['event']=='OPTION_SELECTION')
             self.assertEqual(contract['expiry'],'2026-11-19')
             self.assertEqual(contract['option_type'],'CE')
+            self.assertTrue(next(x for x in events if x['event']=='OPTION_SELECTION')['fallback_from_credit'])
             self.assertLessEqual(contract['risk_plan']['estimated_stop_loss_including_charges'],1000)
             self.assertGreaterEqual(contract['risk_plan']['net_reward_risk'],1.5)
             self.assertIn('PAPER_TRADE_CLOSED',kinds)
