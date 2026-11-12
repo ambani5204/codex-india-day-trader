@@ -1,4 +1,4 @@
-name: Nightly bounded index strategy research (no broker orders)
+name: Nightly simple ORB and EMA strategy research (no broker orders)
 
 on:
   workflow_dispatch:
@@ -58,10 +58,10 @@ jobs:
           START=$(TZ=Asia/Kolkata date -d "${END} - 720 days" +%F)
           if [[ "${START}" < "2025-10-01" ]]; then START="2025-10-01"; fi
 
-          echo "Running bounded chart research from ${START} to ${END}."
-          python tools/india.py research-index-walk-forward \
+          echo "Running four-rule simple ORB/EMA research from ${START} to ${END}."
+          python tools/india.py research-simple-edge \
             --from-date "${START}" --to-date "${END}" \
-            --market AUTO --max-configs 96 --slippage-points 1 \
+            --market AUTO --slippage-points 1 \
             --out trader/backtests/nightly_research_status.json
 
           python - <<'PY'
@@ -73,7 +73,7 @@ jobs:
             '',
             'Status: '+summary['status'],
             'Window: '+summary['from_date']+' to '+summary['to_date'],
-            'Trials completed: '+str(summary['trials_run']),
+            'Precommitted simple hypotheses: '+str(summary['precommitted_configurations']),
             'Real trading automatically enabled: **No**',
             'Actual after-tax futures/options profit verified: **No**',
             '',
@@ -88,7 +88,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-index-research-report
+          name: nightly-simple-orb-ema-research-report
           path: trader/backtests/nightly_research_status.json
           if-no-files-found: warn
           retention-days: 30
