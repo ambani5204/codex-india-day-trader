@@ -20,7 +20,6 @@ jobs:
     env:
       UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
       PYTHONUNBUFFERED: "1"
-      JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,6 +28,8 @@ jobs:
       - name: Offline safety and unit tests
         run: python -m unittest discover -s tests -q
       - name: Verify PRIVATE archive destination before trading
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
         run: python -m deploy.private_journal_sync --verify-only
       - name: Run live option-quote CE/PE paper session (read only)
         id: session
@@ -38,6 +39,8 @@ jobs:
         if: always() && steps.session.outcome != 'skipped'
         id: private_upload
         continue-on-error: true
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
         run: python -m deploy.private_journal_sync
       - name: Publish ONLY public-safe aggregate (never raw quotes/journals)
         if: always()
