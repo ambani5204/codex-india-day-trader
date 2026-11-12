@@ -28,7 +28,7 @@ class MockApi:
                 Bar(t(25),1000,1005,995,1000),Bar(t(30),1020,1025,1015,1020)]
     def option_chain(self,index,expiry):
         data=[]
-        for strike,delta,bid,ask in ((900,-.25,48,48.48),(850,-.08,8,8.05),(800,-.03,1,1.01)):
+        for strike,delta,bid,ask in ((900,-.25,24.05,24.29),(870,-.08,5,5.05),(860,-.03,1,1.01)):
             key=f'BSE_FO|{strike}P'
             data.append({'expiry':expiry,'strike_price':strike,
                          'call_options':{'instrument_key':'BSE_FO|IV',
@@ -43,7 +43,7 @@ class MockApi:
 
 def master():
     result=[]
-    for strike in (900,850,800):
+    for strike in (900,870,860):
         result.append({'segment':'BSE_FO','instrument_type':'PE',
                        'underlying_symbol':'SENSEX',
                        'instrument_key':f'BSE_FO|{strike}P',
