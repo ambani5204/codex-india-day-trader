@@ -227,6 +227,10 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
                                               max(.01,stop_debit+hedge_bid),hedge_bid,qty,exchange)
             target_net=money((credit-target_debit)*qty-target_fees)
             stop_net_loss=money((stop_debit-credit)*qty+stop_fees)
+            # The planned close debit can exceed theoretical expiry payoff:
+            # BOTH losses must fit the same hard *modeled* INR risk cap.
+            if stop_net_loss>cap:
+                continue
             planned_rr=(target_net/stop_net_loss) if stop_net_loss>0 else 0
             if min_reward_risk>0 and (target_net<=0 or planned_rr<min_reward_risk):
                 continue
