@@ -6,6 +6,22 @@ This project adapts the 11 skill *roles* from [Jakeschincariol/day-trader-skill]
 
 It is intended for **educational analysis** and controlled manual/paper workflows, not guaranteed profitability. Historical tests have lookahead and selection-bias risk unless verified against accurate, timestamped, independently collected market data.
 
+## Simple strategy research before considering larger position sizes
+
+The 96-configuration chart research run **failed** its validation gates on 1 Oct 2025–1 Oct 2026. Its attractive EMA-only rows had just 1–5 validation trades, insufficient to claim a repeatable edge. Rather than keep tuning dozens of combinations on the same seen historical dates, `research-simple-year.sh` compares **four fixed rules** only: **trend-confirmed 15-minute opening-range break** (1.5R or 2R) and **EMA8/21 trend continuation** (1.5R or 2R). There is no fakeout, trap or mean-reversion trading in this simple research branch.
+
+```bash
+cd ~/codex-india-day-trader
+git pull
+bash research-simple-year.sh
+```
+
+The new script reuses the existing Upstox index candle cache. It caps hypothetical entries at **one per day**, requires sufficiently directional price movement using closed-candle price efficiency, avoids compressed opening ranges, rejects weak directional candles, and applies an **entry-time cutoff** of 10:45 IST for ORB and 13:30 IST for EMA. The known-entry futures transaction fee proxy must cost **no more than 25% of the structural 1R risk**; a gross-good trade with disproportionately large taxes/charges is skipped *before* the simulated entry. All results are adjusted for one adverse chart-point of slippage each side plus date-aware estimated one-lot futures charges.
+
+Results: `trader/backtests/simple_edge_2025-10-01_to_2026-10-01.json`. Each configuration must pass chronological **training and validation**, with enough trades, positive fee-adjusted average R, profit factor >= 1.10 and drawdown checks; one selected candidate then faces the final segment plus double-slippage sensitivity. **The historical 2025–26 holdout has already been inspected during prior optimization, so it is NOT a pristine unseen test of newly designed strategies.** Subsequent forward paper execution on executable futures/options must be independently verified. If no candidate passes, status is `NO_SIMPLE_STRATEGY_PASSED_VALIDATION`; there is NO automatic retry with relaxed thresholds and no promotion to active paper positions.
+
+**Do not scale based on a chart proxy.** The gate `safe_to_scale=false` is unconditional: larger lots require real instrument-specific contract data, margin, depth/slippage capacity analysis, actual cost/tax calculation, and a fresh sample of independent forward paper trades across varied market conditions. Scaling magnifies adverse market moves and may deteriorate fill prices. Never equate more lots with an improvement in expected profit per contract.
+
 ## Research engine: trend, sideways, multiple R:R and transaction-tax sensitivity
 
 The original one-year chart test (1 Oct 2025–1 Oct 2026) returned **602 paper index-point trades, a 32.23% win rate, −39.92R and 0.90 gross R profit factor**. It was **negative even before any tradable-instrument fees**. This is the BASELINE, not evidence of a profitable strategy. The new **standalone research optimizer** does not modify the saved paper-trading engine or automatically deploy new parameters.
@@ -37,7 +53,7 @@ Every candidate must satisfy **positive estimated net average R, estimated net p
 
 ### Nightly event on GitHub Actions
 
-The repository now contains [`nightly-index-strategy-research.yml`](.github/workflows/nightly-index-strategy-research.yml), scheduled **weekdays at 23:00 IST** (GitHub's actual start may be delayed), plus an on-demand Actions button. Each run first runs the unit tests, restores cached public index candles, and performs a **finite** 96-configuration research check using a rolling two-year maximum period ending on the **last completed calendar day**. It publishes a JSON report under that GitHub Actions run's **Artifacts** and shows its result in the GitHub job summary.
+The repository now contains [`nightly-index-strategy-research.yml`](.github/workflows/nightly-index-strategy-research.yml), scheduled **weekdays at 23:00 IST** (GitHub's actual start may be delayed), plus an on-demand Actions button. Each run first runs the unit tests, restores cached public index candles, and performs a **finite four-rule ORB/EMA research check** using a rolling two-year maximum period ending on the **last completed calendar day**. It publishes a JSON report under that GitHub Actions run's **Artifacts** and shows its result in the GitHub job summary.
 
 **One required external setup:** In your repository's **Settings → Secrets and variables → Actions → New repository secret**, add `UPSTOX_ACCESS_TOKEN` with a valid market-data token. **Do not send this token in chat or commit it to GitHub.** Your private Termux token cannot be transferred automatically into GitHub Actions. If the secret is absent, the scheduled job writes `NOT_RUN_MISSING_UPSTOX_ACCESS_TOKEN` rather than making up results. Tokens may expire and need secure renewal; GitHub runners cannot use the private Termux token without configuration.
 
