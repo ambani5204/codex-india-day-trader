@@ -53,13 +53,36 @@ def credit_fixture():
 
 
 class IndexStopTests(unittest.TestCase):
-    def test_orb_uses_midpoint_without_inventing_early_atr(self):
+    def test_orb_uses_breakout_candle_extreme_without_inventing_early_atr(self):
         signal={'strategy':'OPENING_RANGE_BREAKOUT','direction':'BULL'}
         p=index_stop_plan(opening_candles(),signal,1020,NOW)
-        self.assertEqual(p['basis'],'OR_15_MIN_MIDPOINT')
-        self.assertEqual(p['index_stop'],1000)
-        self.assertEqual(p['index_risk_points'],20)
+        self.assertEqual(p['basis'],'ORB_BREAKOUT_CANDLE_LOW')
+        self.assertEqual(p['index_stop'],1012.5)
+        self.assertEqual(p['index_risk_points'],7.5)
+        self.assertEqual(p['index_target'],1035)
+        self.assertEqual(p['index_reward_points'],15)
         self.assertIsNone(p['atr_5m'])
+        self.assertEqual(p['target_basis'],'ORB_2R_PROJECTION')
+
+    def test_orb_retest_uses_breakout_level_with_buffer(self):
+        bars=opening_candles()
+        fourth=bars[-1]
+        bars[-1]=Bar(fourth.time,1004,1008,1002,1006)
+        signal={'strategy':'OPENING_RANGE_BREAKOUT','direction':'BULL'}
+        p=index_stop_plan(bars,signal,1006,NOW)
+        self.assertEqual(p['basis'],'ORB_OPENING_HIGH_RETEST')
+        self.assertEqual(p['index_stop'],1002.5)
+        self.assertEqual(p['index_target'],1013)
+
+    def test_orb_bearish_breakout_candle_extreme(self):
+        bars=opening_candles()
+        fourth=bars[-1]
+        bars[-1]=Bar(fourth.time,980,985,975,980)
+        signal={'strategy':'OPENING_RANGE_BREAKOUT','direction':'BEAR'}
+        p=index_stop_plan(bars,signal,980,NOW)
+        self.assertEqual(p['basis'],'ORB_BREAKOUT_CANDLE_HIGH')
+        self.assertEqual(p['index_stop'],987.5)
+        self.assertEqual(p['index_target'],965)
 
     def test_missing_index_candle_blocks_stop_plan(self):
         with self.assertRaises(UpstoxError):
@@ -74,10 +97,34 @@ class IndexStopTests(unittest.TestCase):
         late=dt.datetime(2026,11,12,10,55,1,tzinfo=IST)
         p=index_stop_plan(bars,{'strategy':'EMA_8_21_CROSS','direction':'BEAR'},
                           1000,late)
-        self.assertEqual(p['index_stop'],1009)
-        self.assertEqual(p['basis'],'ATR_5M_14_X_1.5')
+        self.assertEqual(p['index_stop'],1004.2)
+        self.assertEqual(p['basis'],'EMA_6_BAR_SWING_WITH_ATR_BUFFER')
+        self.assertEqual(p['index_target'],991.6)
+        self.assertEqual(p['index_reward_points'],8.4)
         with self.assertRaises(UpstoxError):
             atr_5m(bars[:14])
+
+
+    def test_mean_reversion_stop_and_target_are_setup_specific(self):
+        origin=dt.datetime(2026,11,12,9,15,tzinfo=IST)
+        bars=[Bar(origin+dt.timedelta(minutes=5*i),1000,1003,997,1000)
+              for i in range(25)]
+        latest=bars[-1].time
+        bars[-1]=Bar(latest,1000,1001,988,990)
+        now=latest+dt.timedelta(minutes=5,seconds=1)
+        p=index_stop_plan(bars,{'strategy':'MEAN_REVERSION','direction':'BULL'},990,now)
+        self.assertEqual(p['basis'],'MEAN_REVERSION_RECENT_EXTREME_WITH_ATR_BUFFER')
+        self.assertEqual(p['target_basis'],'MEAN_REVERSION_20_BAR_MEAN')
+        self.assertEqual(p['index_target'],1000)
+        self.assertGreater(p['index_risk_points'],0)
+
+    def test_mean_reversion_with_no_mean_recovery_room_is_blocked(self):
+        origin=dt.datetime(2026,11,12,9,15,tzinfo=IST)
+        bars=[Bar(origin+dt.timedelta(minutes=5*i),1000,1003,997,1000)
+              for i in range(25)]
+        now=bars[-1].time+dt.timedelta(minutes=5,seconds=1)
+        with self.assertRaisesRegex(UpstoxError,'No valid favorable structural target'):
+            index_stop_plan(bars,{'strategy':'MEAN_REVERSION','direction':'BULL'},1002,now)
 
 
 class LongOptionRiskTests(unittest.TestCase):
