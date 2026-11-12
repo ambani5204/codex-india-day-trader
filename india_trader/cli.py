@@ -139,6 +139,15 @@ def main(argv=None):
     btidx.add_argument('--market',choices=['AUTO','NIFTY','SENSEX','BOTH'],default='AUTO')
     btidx.add_argument('--cache-dir',default='trader/backtest_cache')
     btidx.add_argument('--out',default='trader/backtests/index_signals.json')
+    idxbt=sub.add_parser('backtest-index-intraday',
+        help='Backtest same advanced signals/stops as hypothetical index CHART POINTS only; no put/call, no traded index')
+    idxbt.add_argument('--from-date',required=True,help='YYYY-MM-DD inclusive')
+    idxbt.add_argument('--to-date',required=True,help='YYYY-MM-DD inclusive')
+    idxbt.add_argument('--market',choices=['AUTO','NIFTY','SENSEX','BOTH'],default='AUTO')
+    idxbt.add_argument('--cache-dir',default='trader/backtest_cache')
+    idxbt.add_argument('--out',default='trader/backtests/index_intraday.json')
+    idxbt.add_argument('--slippage-points',type=float,default=0.0,
+                       help='Hypothetical adverse index points per entry and exit; default zero')
     diag=sub.add_parser('paper-diagnose',help='Show exact local paper signal, stop, target and rejection reasons; read-only')
     diag.add_argument('--date',required=True,help='YYYY-MM-DD')
     diag.add_argument('--market',choices=['SENSEX','NIFTY'],required=True)
@@ -176,6 +185,24 @@ def dispatch(a):
     if a.cmd=='paper-diagnose':
         from .diagnostics import diagnose_paper_sessions
         dump(diagnose_paper_sessions(a.directory,a.date,a.market))
+        return 0
+    if a.cmd=='backtest-index-intraday':
+        from .index_intraday_backtest import backtest_index_intraday
+        result=backtest_index_intraday(
+            a.from_date,a.to_date,a.market,cache_dir=a.cache_dir,
+            out=a.out,slippage_points=a.slippage_points)
+        dump({'kind':result['kind'],'from_date':result['from_date'],
+              'to_date':result['to_date'],'markets':result['market_mode'],
+              'candidate_signals':result['candidate_signals'],
+              'complete_sessions':result['complete_sessions'],
+              'excluded_sessions':result['excluded_sessions'],
+              'excluded_by_reason':result['excluded_by_reason'],
+              'overall':result['overall'],
+              'by_strategy':result['by_strategy'],
+              'by_market':result['by_market'],
+              'rejected_signals':result['rejected_signals'],
+              'options_net_pnl_inr':None,
+              'results_path':a.out,'warning':result['warning']})
         return 0
     if a.cmd=='backtest-index-signals':
         from .historical_backtest import annual_signal_backtest
