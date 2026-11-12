@@ -127,6 +127,12 @@ def run_session(day: dt.date, market: str):
         sync_journals(LOG_DIR / 'paper_upstox', LOG_DIR / 'paper.sqlite3')
     report = period_report('day', day.isoformat(), LOG_DIR / 'paper.sqlite3')
     print(f"{day} · {report['trades']} closed paper trades · Net ₹{report['net_pnl']:.2f}", flush=True)
+    if result != 0:
+        message=(f'{market} worker exited with code {result}, no normal session completion. '
+                 f'Check {log_path} for the specific startup/trading error.')
+        print('ERROR: '+message, flush=True)
+        write_status('ERROR', market=market, message=message)
+        return
     write_status('FINISHED', market=market,
                  message=f"Session ended, {report['trades']} closed trades; next weekday is scheduled automatically")
 
