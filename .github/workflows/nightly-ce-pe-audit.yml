@@ -1,0 +1,31 @@
+name: Nightly CE-PE paper failure audit (public-safe)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 17:30 UTC = 23:00 IST, weekdays.
+    - cron: "30 17 * * 1-5"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build daily CE/PE diagnostic report from sanitized aggregate
+        run: python -m deploy.nightly_ce_pe_audit
+      - name: Save public-safe audit only
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-safe-nightly-ce-pe-audit-${{ github.run_id }}
+          path: trader/nightly_ce_pe_audit.md
+          retention-days: 30
