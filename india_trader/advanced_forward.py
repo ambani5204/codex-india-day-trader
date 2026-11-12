@@ -53,6 +53,30 @@ def _chain_iv(chain,spot,direction):
         return None
 
 
+def option_structure_priority(signal, atm_iv_pct, credit_iv_threshold=18):
+    """Select preference by chart behavior, never by raw unrelated R:R values.
+
+    Directional continuation and trapped-breakout reversals favor bought
+    CE/PE. Failed wick sweeps and mean-reversion signals prefer a hedged
+    *credit* spread when IV is high enough to consider selling.
+    A candidate always has to pass its own fee-adjusted risk/reward and
+    available-expiry safeguards; neither order type is guaranteed to qualify.
+    """
+    strategy=signal.get('strategy')
+    recognized={'OPENING_RANGE_BREAKOUT','OPENING_RANGE_FAKEOUT',
+                'OPENING_RANGE_TRAP','EMA_8_21_CROSS','MEAN_REVERSION'}
+    if strategy not in recognized:
+        raise UpstoxError('Unknown strategy cannot choose an option structure')
+    if signal.get('direction') not in {'BULL','BEAR'}:
+        raise UpstoxError('Unknown direction cannot select CE or PE')
+    if not (0<float(atm_iv_pct)<=500 and 0<float(credit_iv_threshold)<500):
+        raise UpstoxError('Invalid option IV regime for structure selection')
+    if atm_iv_pct<credit_iv_threshold:
+        return ['LONG']
+    range_rejection=strategy in {'OPENING_RANGE_FAKEOUT','MEAN_REVERSION'}
+    return ['CREDIT','LONG'] if range_rejection else ['LONG','CREDIT']
+
+
 def latest_closed_index_close(api, market, now):
     """Observe only a FRESH, fully closed 5m index candle; otherwise no trigger."""
     bars=api.candles(INDICES[market])
@@ -266,20 +290,21 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                 'underlying_key':INDICES[args.market],
                                 'underlying_close':last.close,
                                 'signal':signal})
-                        # Conservative rule: high-IV regime considers hedged premium
-                        # selling; lower IV considers buying a long call/put.
-                        # Threshold is exploratory, not calibrated/validated.
+                        # Use scenario-specific preference. These structures
+                        # have different payoff distributions: their raw net
+                        # R:R numbers are not directly rankable as alternatives.
                         expiry=earliest_current_expiry(records,args.market,today)
                         chain=api.option_chain(INDICES[args.market],expiry)
                         iv=_chain_iv(chain,last.close,signal['direction'])
                         if iv is None:
                             raise UpstoxError('No reliable IV; no paper entry')
-                        kind='CREDIT' if iv>=args.credit_iv_threshold else 'LONG'
+                        priority=option_structure_priority(signal,iv,args.credit_iv_threshold)
                         budget=adaptive_paper_risk(
                             settings,realized_net=prior_net+net,
                             realized_losses=prior_consumed+loss_consumed)
                         remaining=budget['remaining_daily_loss_inr']
-                        effective_settings={**settings,'max_loss_per_trade_inr':budget['trade_risk_cap_inr']}
+                        effective_settings={**settings,
+                            'max_loss_per_trade_inr':budget['trade_risk_cap_inr']}
                         stop_plan=index_stop_plan(bars,signal,last.close,now)
                         record({'event':'RISK_PLAN','timestamp':now.isoformat(),
                                 'index_stop_plan':stop_plan,
@@ -287,75 +312,113 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                 'remaining_daily_risk_inr':remaining,
                                 'max_trade_loss_inr':budget['trade_risk_cap_inr']})
                         record({'event':'STRATEGY_DECISION','timestamp':now.isoformat(),
-                                'strategy':signal['strategy'],'trade_structure':kind,
+                                'strategy':signal['strategy'],
+                                'trade_structure':priority[0],
+                                'structure_priority':priority,
+                                'signal_direction':signal['direction'],
                                 'atm_iv_pct':round(iv,2),
-                                'iv_threshold_pct':args.credit_iv_threshold})
-                        fallback_from_credit=False
-                        if kind=='CREDIT':
-                            try:
+                                'iv_threshold_pct':args.credit_iv_threshold,
+                                'credit_expiry':expiry,
+                                'long_expiry_rule':'FIRST_NON_EXPIRING_ELIGIBLE'})
+                        rejected=[]
+                        for rank,kind in enumerate(priority):
+                            next_kind=priority[rank+1] if rank+1<len(priority) else None
+                            selection=None
+                            contract=None
+                            error=None
+                            if kind=='CREDIT':
                                 if dt.date.fromisoformat(expiry)==today and now.time()>dt.time(13,45):
-                                    raise UpstoxError('No new expiry-day short spreads after 13:45 IST')
-                                selection=select_credit_spread(
-                                    records,chain,args.market,signal['direction'],
-                                    last.close,today,effective_settings,expiry=expiry,
-                                    remaining_daily_loss=remaining,
-                                    min_reward_risk=.25,index_stop_plan=stop_plan)
-                            except UpstoxError as credit_error:
-                                # A rejected SHORT credit spread is NOT a rejected
-                                # underlying signal. Independently evaluate a
-                                # non-expiring LONG CE/PE under its own 1.5 net R:R
-                                # and structural-stop/whole-lot risk guards.
-                                # Missing market data/API failures are handled by
-                                # the outer exception path, not hidden here.
+                                    error='No new expiry-day short spreads after 13:45 IST'
+                                else:
+                                    try:
+                                        selection=select_credit_spread(
+                                            records,chain,args.market,signal['direction'],
+                                            last.close,today,effective_settings,expiry=expiry,
+                                            remaining_daily_loss=remaining,
+                                            min_reward_risk=.25,index_stop_plan=stop_plan)
+                                    except UpstoxError as exc:
+                                        error=str(exc)
+                                if selection:
+                                    record({'event':'PAPER_SPREAD_OPEN',
+                                            'timestamp':now.isoformat(),
+                                            'contract':selection,
+                                            'estimated_max_loss':selection[
+                                                'estimated_max_expiry_loss_after_fees'],
+                                            'warning':'Assumes simultaneous fill at visible 2-leg bid/ask; real margin and fills not verified'})
+                                    pos={'kind':'CREDIT','contract':selection}
+                                    break
+                            else:
+                                try:
+                                    preferred=select_atm(
+                                        records,args.market,
+                                        'BUY' if signal['direction']=='BULL' else 'SELL',
+                                        last.close,today)
+                                except UpstoxError as exc:
+                                    error=str(exc)
+                                if not error:
+                                    # API timeouts propagate to the outer exception
+                                    # and NEVER masquerade as eligibility rejections.
+                                    chain_l=api.option_chain(
+                                        INDICES[args.market],preferred['expiry'])
+                                    try:
+                                        contract=select_long_risk_managed(
+                                            records,chain_l,args.market,
+                                            signal['direction'],last.close,today,
+                                            effective_settings,stop_plan,
+                                            preferred['expiry'],target_pct=30,
+                                            min_rr=1.5,max_lots=3,
+                                            remaining_daily_loss=remaining)
+                                    except UpstoxError as exc:
+                                        error=str(exc)
+                                if contract:
+                                    risk_plan=contract['risk_plan']
+                                    qty=risk_plan['quantity']
+                                    engine=PaperEngine(
+                                        contract['symbol'],qty,settings['capital_inr'],
+                                        budget['trade_risk_cap_inr'],
+                                        max_allocation_fraction=settings['max_allocation_fraction'],
+                                        fee_profile='UPSTOX',flat_by=dt.time(15,10),
+                                        planned_stop=risk_plan['stop_bid'],
+                                        planned_target=risk_plan['target_bid'],
+                                        min_net_reward_risk=1.5,
+                                        remaining_daily_loss=remaining)
+                                    # Never continue to another structure on a
+                                    # transport/quote failure: no quote means no
+                                    # trustworthy fill or credit-spread fallback.
+                                    q=api.full_quote(contract['instrument_key'])
+                                    result=engine.process(
+                                        q,signal=True,reason=signal['strategy'],
+                                        now=now,max_age_seconds=args.max_quote_age_seconds)
+                                    if result and result['event']=='ENTRY_SIGNAL':
+                                        record({'event':'OPTION_SELECTION',
+                                                'timestamp':now.isoformat(),
+                                                'contract':contract,
+                                                'fallback_from_credit':(
+                                                    'CREDIT' in priority[:rank]),
+                                                'structure_rank':rank+1})
+                                        record(result)
+                                        pos={'kind':'LONG','contract':contract}
+                                        break
+                                    engine=None
+                                    error='Option quote invalid or long entry guard rejected'
+                            if error:
+                                rejected.append(f'{kind}: {error}')
                                 record({'event':'STRUCTURE_REJECTED',
                                         'timestamp':now.isoformat(),
-                                        'trade_structure':'DEFINED_RISK_CREDIT_SPREAD',
-                                        'reason':str(credit_error),
-                                        'fallback':'TRY_NON_EXPIRING_LONG_OPTION',
-                                        'note':'Fallback does not waive any risk, IV or liquidity requirement'})
-                                kind='LONG'
-                                fallback_from_credit=True
-                            else:
-                                # Quote-based paper execution, not guaranteed
-                                # simultaneous hedge fills or verified margin.
-                                record({'event':'PAPER_SPREAD_OPEN','timestamp':now.isoformat(),
-                                        'contract':selection,'estimated_max_loss':
-                                        selection['estimated_max_expiry_loss_after_fees'],
-                                        'warning':'Simultaneous 2-leg fill assumed; no actual brokerage or margin'})
-                                pos={'kind':'CREDIT','contract':selection}
-                        if kind=='LONG':
-                            # Long option: do not use same-day expiry when settlement
-                            # or auto-exercise is not modeled.
-                            preferred=select_atm(records,args.market,
-                                                    'BUY' if signal['direction']=='BULL' else 'SELL',
-                                                    last.close,today)
-                            chain_l=api.option_chain(INDICES[args.market],preferred['expiry'])
-                            contract=select_long_risk_managed(records,chain_l,args.market,
-                                      signal['direction'],last.close,today,effective_settings,
-                                      stop_plan,preferred['expiry'],target_pct=30,
-                                      min_rr=1.5,max_lots=3,
-                                      remaining_daily_loss=remaining)
-                            risk_plan=contract['risk_plan']
-                            qty=risk_plan['quantity']
-                            engine=PaperEngine(contract['symbol'],qty,settings['capital_inr'],
-                                  budget['trade_risk_cap_inr'],
-                                  max_allocation_fraction=settings['max_allocation_fraction'],
-                                  fee_profile='UPSTOX',flat_by=dt.time(15,10),
-                                  planned_stop=risk_plan['stop_bid'],
-                                  planned_target=risk_plan['target_bid'],
-                                  min_net_reward_risk=1.5,
-                                  remaining_daily_loss=remaining)
-                            q=api.full_quote(contract['instrument_key'])
-                            result=engine.process(q,signal=True,reason=signal['strategy'],
-                                                  now=now,max_age_seconds=args.max_quote_age_seconds)
-                            if not result or result['event']!='ENTRY_SIGNAL':
-                                engine=None
-                                raise UpstoxError('Long option entry not permitted by quote/timing guards')
-                            record({'event':'OPTION_SELECTION','timestamp':now.isoformat(),
-                                    'contract':contract,
-                                    'fallback_from_credit':fallback_from_credit})
-                            record(result)
-                            pos={'kind':'LONG','contract':contract}
+                                        'trade_structure':(
+                                            'DEFINED_RISK_CREDIT_SPREAD' if kind=='CREDIT'
+                                            else 'NON_EXPIRING_LONG_OPTION'),
+                                        'reason':error,
+                                        'fallback':('TRY_NON_EXPIRING_LONG_OPTION'
+                                                    if next_kind=='LONG' else
+                                                    'TRY_HEDGED_CREDIT_SPREAD'
+                                                    if next_kind=='CREDIT' else None),
+                                        'strategy':signal['strategy'],
+                                        'note':'No risk, expiry or liquidity rule is waived'})
+                        if pos is None:
+                            engine=None
+                            raise UpstoxError('No eligible structure for signal: '+
+                                              '; '.join(rejected))
                         cooldown_until=now+dt.timedelta(minutes=args.cooldown_minutes)
                 except (UpstoxError,ValueError,KeyError) as exc:
                     record({'event':'SIGNAL_REJECTED','timestamp':now.isoformat(),
