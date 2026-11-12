@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from india_trader.core import Bar, IST
-from india_trader.advanced_forward import run_advanced
+from india_trader.advanced_forward import run_advanced, previous_day_state
+from india_trader.upstox import UpstoxError
 
 
 class Clock:
@@ -84,6 +85,77 @@ class AdvancedWorkerTests(unittest.TestCase):
             self.assertEqual(trade['reason'],'TIME_EXIT')
             self.assertLess(trade['net_pnl'],trade['gross_pnl'])
             self.assertTrue(trade['simulated'])
+
+
+    def test_start_advanced_at_1125_after_0915_no_trade_orb_session(self):
+        """Exact November 12 Android issue: earlier completed ORB must not block."""
+        clock=Clock()
+        clock.now=dt.datetime(2026,11,12,11,25,2,tzinfo=IST)
+        cfg={'paper':True,'allow_live_orders':False,'allow_derivatives':True,
+             'capital_inr':100000,'max_loss_per_trade_inr':500,
+             'max_daily_loss_inr':1500,'max_trades_per_day':3,
+             'max_allocation_fraction':.25}
+        args=SimpleNamespace(market='SENSEX',poll_seconds=30,cooldown_minutes=15,
+             master='',directory='',max_quote_age_seconds=15,credit_iv_threshold=18)
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            m=root/'master.json'
+            m.write_text(json.dumps({'asof':'2026-11-12','records':master()}))
+            args.master=str(m)
+            args.directory=str(root/'sessions')
+            folder=Path(args.directory)
+            folder.mkdir()
+            old=folder/'2026-11-12_SENSEX_091503.jsonl'
+            old.write_text('\\n'.join([
+                json.dumps({'event':'SESSION_START','timestamp':'2026-11-12T09:15:03+05:30'}),
+                json.dumps({'event':'SESSION_SUMMARY','timestamp':'2026-11-12T09:40:37+05:30',
+                            'status':'CLOSED_OR_NO_TRADE',
+                            'summary':{'closed_trades':0,'realized_net_pnl':0.,
+                                       'open_position':None}})
+            ])+'\\n')
+            from io import StringIO
+            from contextlib import redirect_stdout
+            with redirect_stdout(StringIO()):
+                self.assertEqual(run_advanced(args,cfg,MockApi(clock),clock.clock,clock.sleep),0)
+            sessions=sorted(folder.glob('*.jsonl'))
+            self.assertEqual(len(sessions),2)
+            advanced=next(p for p in sessions if '_ADVANCED_' in p.name)
+            events=[json.loads(line) for line in advanced.read_text().splitlines()]
+            self.assertEqual(events[0]['prior_closed_trades'],0)
+            self.assertEqual(events[0]['prior_sessions'],1)
+            self.assertEqual(events[-1]['event'],'SESSION_SUMMARY')
+            self.assertFalse(any(e['event']=='PAPER_TRADE_CLOSED' for e in events))
+
+    def test_prior_unfinished_session_blocks_new_paper_worker(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            old=root/'2026-11-12_SENSEX_091503.jsonl'
+            old.write_text(json.dumps({'event':'SESSION_START',
+                        'timestamp':'2026-11-12T09:15:03+05:30'})+'\\n')
+            with self.assertRaises(UpstoxError) as caught:
+                previous_day_state(root,dt.date(2026,11,12),'SENSEX')
+            self.assertIn('unfinished',str(caught.exception))
+
+    def test_prior_realized_loss_and_cooldown_carry_forward(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            old=root/'2026-11-12_SENSEX_091503.jsonl'
+            closed=[
+               {'event':'SESSION_START','timestamp':'2026-11-12T09:15:03+05:30'},
+               {'event':'PAPER_TRADE_CLOSED','timestamp':'2026-11-12T10:45:00+05:30',
+                'net_pnl':-350.25},
+               {'event':'PAPER_TRADE_CLOSED','timestamp':'2026-11-12T11:05:00+05:30',
+                'net_pnl':200.00},
+               {'event':'SESSION_SUMMARY','timestamp':'2026-11-12T11:06:00+05:30',
+                'summary':{'closed_trades':2,'open_position':None}}
+            ]
+            old.write_text('\\n'.join(json.dumps(e) for e in closed)+'\\n')
+            state=previous_day_state(root,dt.date(2026,11,12),'SENSEX',15)
+            self.assertEqual(state['closed_trades'],2)
+            self.assertEqual(state['realized_net_pnl'],-150.25)
+            self.assertEqual(state['loss_consumed_inr'],350.25)
+            self.assertEqual(state['cooldown_until'],
+                             dt.datetime(2026,11,12,11,20,tzinfo=IST))
 
 
 if __name__=='__main__':
