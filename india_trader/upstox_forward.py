@@ -28,8 +28,11 @@ def _daily_risk(directory, day, settings, market=None):
     pattern=day.isoformat()+'_'+(market+'_' if market else '')+'*.jsonl'
     for file in Path(directory).glob(pattern):
         events=_events(file)
-        if any(e.get('event')=='PAPER_BUY_FILLED' for e in events) and not any(e.get('event')=='PAPER_TRADE_CLOSED' for e in events):
-            raise UpstoxError(f'Unresolved position: {file}. Review before another session')
+        opened=any(e.get('event') in {'PAPER_BUY_FILLED','PAPER_SPREAD_OPEN'} for e in events)
+        unresolved=any(e.get('event')=='UNRESOLVED_POSITION' for e in events)
+        closed_trade=any(e.get('event')=='PAPER_TRADE_CLOSED' for e in events)
+        if unresolved or (opened and not closed_trade):
+            raise UpstoxError(f'Unresolved paper position: {file}. Review before another session')
         closed.extend(e for e in events if e.get('event')=='PAPER_TRADE_CLOSED')
     if sum(float(e['net_pnl']) for e in closed)<=-float(settings['max_daily_loss_inr']):
         raise UpstoxError('Daily loss limit reached')
