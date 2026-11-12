@@ -36,6 +36,6 @@ The other ten folders in `.agents/skills/` cover scan → entry → exit → tim
 
 ## Full-day India options skill relationship
 
-Experimental paper-advanced checks premium allocation and defined-risk wing width minus credit against existing INR risk limits. Never scale or relax risk limits simply to force a trade.
+For advanced long options, size **whole current NFO/BFO lots** by live bid/ask depth, estimated structural stop distance mapped by current delta, estimated adverse slippage, charges, allocated capital (default 25%) and the smaller of 1.0% of current paper equity or remaining daily loss allowance. The selected long must show net target/stop reward:risk ≥1.5. Credit spreads require a farther OTM long hedge, same expiry, 4-leg charges, estimated expiry maximum loss and planned buy-to-close stop loss both within the same percent-of-equity risk cap; modeled net target/stop ratio ≥0.25. The legacy ORB mode still uses its independent fixed ₹500 rule. These estimates are not executable broker margin/fill quotes.
 
 See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
