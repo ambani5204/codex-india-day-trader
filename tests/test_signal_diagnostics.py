@@ -66,6 +66,33 @@ class DiagnosticTests(unittest.TestCase):
             self.assertEqual(d['recent_risk_plans'][0]['index_stop'],1012)
             self.assertEqual(d['pending_or_unresolved_sessions'],0)
 
+    def test_credit_fallback_report_separates_attempts_from_paper_fills(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)
+            rows=[
+              {'event':'SESSION_START','timestamp':'2026-11-13T10:00:00+05:30'},
+              {'event':'INDEX_SIGNAL','strategy':'EMA_8_21_CROSS'},
+              {'event':'RISK_PLAN','max_trade_loss_inr':1000,
+               'risk_budget':{'risk_percent':1.0,'trade_risk_cap_inr':1000}},
+              {'event':'STRUCTURE_REJECTED','reason':'No liquid OTM hedge',
+               'trade_structure':'DEFINED_RISK_CREDIT_SPREAD',
+               'fallback':'TRY_NON_EXPIRING_LONG_OPTION'},
+              {'event':'OPTION_SELECTION','fallback_from_credit':True,
+               'contract':{'option_type':'CE'}},
+              {'event':'SESSION_SUMMARY','summary':{'open_position':None}},
+            ]
+            (folder/'2026-11-13_NIFTY_ADVANCED_100000.jsonl').write_text(
+                '\n'.join(json.dumps(x) for x in rows)+'\n',encoding='utf-8')
+            result=diagnose_paper_sessions(folder,'2026-11-13','NIFTY')
+            self.assertEqual(result['credit_structure_rejections'],1)
+            self.assertEqual(result['long_fallback_attempts'],1)
+            self.assertEqual(result['long_fallback_selections'],1)
+            self.assertEqual(result['long_option_fills'],0)
+            self.assertEqual(result['recent_risk_plans'][0]['max_trade_loss_inr'],1000)
+            self.assertEqual(result['recent_risk_plans'][0]['risk_budget']['risk_percent'],1.0)
+            self.assertEqual(result['closed_trades'],0)
+            self.assertEqual(result['rejections'],[])
+
     def test_active_journal_is_marked_pending_not_represented_as_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder=Path(tmp)
