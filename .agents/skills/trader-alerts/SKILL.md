@@ -33,3 +33,9 @@ Follow with alerts check --symbol "NSE:RELIANCE" --ltp 2500 or use Kite quotes w
 ## Related skills
 
 The other ten folders in `.agents/skills/` cover scan → entry → exit → timemachine → budget → risk → broker, plus news, alerts and analyst. Indian insider disclosures are provided by `trader-pelosi` to preserve the 11-skill organization. Optional original US Claude/Python contents can be copied with `scripts/import_upstream.py`.
+
+## Full-day India options skill relationship
+
+Experimental all-day worker polls open-option quotes/depth for exit triggers during market hours. It is not an exchange tick service and does not deliver push notifications.
+
+See [Indian 11-skill integration and limits](../../../docs/INDIA_11_SKILLS.md). The full-day strategy is explicitly opt-in with `PAPER_MODE=advanced bash live-paper-android.sh`; legacy ORB remains the default. No live broker orders. 
