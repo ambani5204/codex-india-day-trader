@@ -134,6 +134,10 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                 pos=None
                                 engine=None
                                 cooldown_until=now+dt.timedelta(minutes=args.cooldown_minutes)
+                            elif result['event'] in ('ENTRY_REJECTED','ENTRY_BLOCKED'):
+                                pos=None
+                                engine=None
+                                cooldown_until=now+dt.timedelta(minutes=args.cooldown_minutes)
                 except (UpstoxError,ValueError,KeyError) as exc:
                     record({'event':'MARKET_DATA_ERROR','timestamp':now.isoformat(),
                             'message':str(exc)})
@@ -197,7 +201,8 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                             engine=PaperEngine(contract['symbol'],qty,settings['capital_inr'],
                                   settings['max_loss_per_trade_inr'],
                                   max_allocation_fraction=settings['max_allocation_fraction'],
-                                  stop_pct=15,target_pct=30,fee_profile='UPSTOX')
+                                  stop_pct=15,target_pct=30,fee_profile='UPSTOX',
+                                  flat_by=dt.time(15,10))
                             q=api.full_quote(contract['instrument_key'])
                             result=engine.process(q,signal=True,reason=signal['strategy'],
                                                   now=now,max_age_seconds=args.max_quote_age_seconds)
