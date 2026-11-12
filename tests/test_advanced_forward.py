@@ -106,13 +106,13 @@ class AdvancedWorkerTests(unittest.TestCase):
             folder=Path(args.directory)
             folder.mkdir()
             old=folder/'2026-11-12_SENSEX_091503.jsonl'
-            old.write_text('\\n'.join([
+            old.write_text('\n'.join([
                 json.dumps({'event':'SESSION_START','timestamp':'2026-11-12T09:15:03+05:30'}),
                 json.dumps({'event':'SESSION_SUMMARY','timestamp':'2026-11-12T09:40:37+05:30',
                             'status':'CLOSED_OR_NO_TRADE',
                             'summary':{'closed_trades':0,'realized_net_pnl':0.,
                                        'open_position':None}})
-            ])+'\\n')
+            ])+'\n')
             from io import StringIO
             from contextlib import redirect_stdout
             with redirect_stdout(StringIO()):
@@ -131,7 +131,7 @@ class AdvancedWorkerTests(unittest.TestCase):
             root=Path(d)
             old=root/'2026-11-12_SENSEX_091503.jsonl'
             old.write_text(json.dumps({'event':'SESSION_START',
-                        'timestamp':'2026-11-12T09:15:03+05:30'})+'\\n')
+                        'timestamp':'2026-11-12T09:15:03+05:30'})+'\n')
             with self.assertRaises(UpstoxError) as caught:
                 previous_day_state(root,dt.date(2026,11,12),'SENSEX')
             self.assertIn('unfinished',str(caught.exception))
@@ -149,7 +149,7 @@ class AdvancedWorkerTests(unittest.TestCase):
                {'event':'SESSION_SUMMARY','timestamp':'2026-11-12T11:06:00+05:30',
                 'summary':{'closed_trades':2,'open_position':None}}
             ]
-            old.write_text('\\n'.join(json.dumps(e) for e in closed)+'\\n')
+            old.write_text('\n'.join(json.dumps(e) for e in closed)+'\n')
             state=previous_day_state(root,dt.date(2026,11,12),'SENSEX',15)
             self.assertEqual(state['closed_trades'],2)
             self.assertEqual(state['realized_net_pnl'],-150.25)
