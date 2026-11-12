@@ -124,7 +124,8 @@ def _fees_credit_round_trip(sell_bid,buy_ask,short_exit,long_exit,qty,exchange):
 
 
 def select_credit_spread(records,chain,market,direction,spot,today,settings,expiry=None,
-                         lots=1,max_spread_pct=2):
+                         lots=1,max_spread_pct=2,remaining_daily_loss=None,
+                         min_reward_risk=0.0,index_stop_plan=None):
     """Sell an OTM option, simultaneously buy a farther-OTM protective option.
 
     Credit spread max expiry payoff loss is strike-width less net credit, plus
@@ -184,7 +185,13 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
             continue
     if len(rows)<2:
         raise UpstoxError('No liquid OTM protective spread legs')
-    cap=float(settings['max_loss_per_trade_inr'])
+    cap=min(float(settings['max_loss_per_trade_inr']),
+            float(remaining_daily_loss) if remaining_daily_loss is not None
+            else float(settings['max_loss_per_trade_inr']))
+    if cap<=0:
+        raise UpstoxError('Daily paper loss budget exhausted')
+    if min_reward_risk<0:
+        raise UpstoxError('Minimum credit spread reward:risk cannot be negative')
     allocation=float(settings['capital_inr'])*float(settings['max_allocation_fraction'])
     ranked=[]
     for short in rows:
@@ -211,6 +218,18 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
             risk=money(max_expiry_loss+est_fees)
             if risk>cap or width*qty>allocation:
                 continue
+            target_debit=max(.01,credit*.4)
+            stop_debit=credit*2
+            hedge_bid=hedge['leg']['bid']
+            target_fees=_fees_credit_round_trip(short['leg']['bid'],hedge['leg']['ask'],
+                                                max(.01,target_debit+hedge_bid),hedge_bid,qty,exchange)
+            stop_fees=_fees_credit_round_trip(short['leg']['bid'],hedge['leg']['ask'],
+                                              max(.01,stop_debit+hedge_bid),hedge_bid,qty,exchange)
+            target_net=money((credit-target_debit)*qty-target_fees)
+            stop_net_loss=money((stop_debit-credit)*qty+stop_fees)
+            planned_rr=(target_net/stop_net_loss) if stop_net_loss>0 else 0
+            if min_reward_risk>0 and (target_net<=0 or planned_rr<min_reward_risk):
+                continue
             ranked.append((abs(short['leg']['delta']-expected_delta), width, -credit,
                            {'market':market,'strategy':'DEFINED_RISK_CREDIT_SPREAD',
                             'direction':direction,'option_type':opt_type,
@@ -221,6 +240,11 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
                             'short_delta':short['leg']['delta'],
                             'credit_per_unit':money(credit),'quantity':qty,
                             'width':width,'estimated_max_expiry_loss_after_fees':risk,
+                            'estimated_target_net_profit':target_net,
+                            'estimated_stop_net_loss':stop_net_loss,
+                            'net_reward_risk_at_credit_stop':round(planned_rr,3),
+                            'minimum_net_reward_risk':min_reward_risk,
+                            'index_stop_plan':index_stop_plan,
                             'margin_not_verified':True,'executable_fill_not_guaranteed':True,
                             'source':'UPSTOX_REST_OPTION_CHAIN_PAPER'}))
     if not ranked:
@@ -228,7 +252,8 @@ def select_credit_spread(records,chain,market,direction,spot,today,settings,expi
     return min(ranked,key=lambda e:e[:3])[3]
 
 
-def spread_mark(position,chain,market,now,stop_multiplier=2,target_fraction=.4):
+def spread_mark(position,chain,market,now,stop_multiplier=2,target_fraction=.4,
+                index_close=None):
     """Mark two-leg spread using unfavorable real top-of-book prices."""
     side='put' if position['option_type']=='PE' else 'call'
     legs={}
@@ -252,7 +277,13 @@ def spread_mark(position,chain,market,now,stop_multiplier=2,target_fraction=.4):
     net=money((position['credit_per_unit']-exit_debit)*position['quantity']-fees)
     tm=now.astimezone(IST).time()
     cutoff=dt.time(14,45) if dt.date.fromisoformat(position['expiry'])==now.date() else dt.time(15,15)
+    stop_plan=position.get('index_stop_plan') or {}
+    stop_level=stop_plan.get('index_stop')
+    index_invalid=(index_close is not None and stop_level is not None and
+                   ((position['direction']=='BULL' and index_close<=stop_level) or
+                    (position['direction']=='BEAR' and index_close>=stop_level)))
     reason=('TIME_EXIT' if tm>=cutoff else
+            'INDEX_STOP' if index_invalid else
             'CREDIT_STOP' if exit_debit>=position['credit_per_unit']*stop_multiplier else
             'CREDIT_TARGET' if (exit_debit<=position['credit_per_unit']*target_fraction and net>0) else None)
     return {'reason':reason,'net_pnl':net,'fees':fees,'fees_breakdown':fee_details,
