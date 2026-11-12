@@ -137,21 +137,33 @@ def select_delta_contract(records, chain, market, side, spot, today, settings, l
     max_loss = float(settings['max_loss_per_trade_inr'])
     max_allocation = float(settings['max_allocation_fraction'])
     candidates = []
+    rejected = {
+        'not_in_daily_master': 0, 'missing_or_wrong_delta': 0,
+        'delta_outside_band': 0, 'no_bid_ask_or_depth': 0,
+        'spread_too_wide': 0, 'premium_allocation_limit': 0,
+        'stop_loss_limit': 0, 'invalid_quote_data': 0,
+    }
+    checked = 0
+    best_risk = None
     for strike_row in chain:
         if not isinstance(strike_row, dict) or strike_row.get('expiry') != expiry:
             continue
         entry = strike_row.get('call_options' if kind == 'CE' else 'put_options') or {}
         key = str(entry.get('instrument_key') or '')
         if key not in valid:
+            rejected['not_in_daily_master'] += 1
             continue
+        checked += 1
         greeks = entry.get('option_greeks') or {}
         market_data = entry.get('market_data') or {}
         try:
             raw_delta = float(greeks['delta'])
             if not (raw_delta > 0 if kind == 'CE' else raw_delta < 0):
+                rejected['missing_or_wrong_delta'] += 1
                 continue
             delta = abs(raw_delta)
             if not delta_min <= delta <= delta_max:
+                rejected['delta_outside_band'] += 1
                 continue
             ask = float(market_data['ask_price'])
             bid = float(market_data['bid_price'])
@@ -161,16 +173,21 @@ def select_delta_contract(records, chain, market, side, spot, today, settings, l
             strike = float(valid[key]['strike_price'])
             quantity = lot_size * int(lots)
             if not (0 < bid <= ask and ask_qty >= quantity and bid_qty >= quantity):
+                rejected['no_bid_ask_or_depth'] += 1
                 continue
             spread = 200 * (ask-bid) / (ask+bid)
             if spread > max_spread_pct:
+                rejected['spread_too_wide'] += 1
                 continue
             premium_outlay = ask * quantity
             if premium_outlay > capital * max_allocation:
+                rejected['premium_allocation_limit'] += 1
                 continue
             stop = max(0.01, ask * (1 - stop_pct / 100))
             loss = (ask-stop)*quantity + option_fees(ask, stop, quantity, exchange, fee_profile)['total']
+            best_risk = loss if best_risk is None else min(best_risk,loss)
             if loss > max_loss:
+                rejected['stop_loss_limit'] += 1
                 continue
             iv = greeks.get('iv')
             theta = greeks.get('theta')
@@ -194,9 +211,17 @@ def select_delta_contract(records, chain, market, side, spot, today, settings, l
             rank = (abs(delta-target_delta), abs(strike-spot), spread, premium_outlay, key)
             candidates.append((rank, selection))
         except (ValueError, TypeError, KeyError, ZeroDivisionError):
+            rejected['invalid_quote_data'] += 1
             continue
     if not candidates:
-        raise UpstoxError('No contract passed live delta, premium/risk, spread and depth checks; no paper entry')
+        reasons = ', '.join(f'{key}={value}' for key,value in rejected.items() if value)
+        lowest = f'; minimum modeled stop loss after prior filters ₹{best_risk:.2f}' if best_risk is not None else ''
+        raise UpstoxError(
+            f'No contract passed live delta, premium/risk, spread and depth checks; no paper entry. '
+            f'Market={market}; expiry={expiry}; eligible_master_matches={checked}; '
+            f'rejections: {reasons or "none"}; loss_limit=₹{max_loss:.2f}; '
+            f'allocation_limit=₹{capital*max_allocation:.2f}{lowest}'
+        )
     return min(candidates, key=lambda item: item[0])[1]
 
 
