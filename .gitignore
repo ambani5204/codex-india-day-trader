@@ -18,3 +18,5 @@ trader/*.sqlite3-*
 trader/*.db
 trader/*.db-*
 trader/*.lock
+trader/backtest_cache/
+trader/backtests/
