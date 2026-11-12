@@ -139,6 +139,10 @@ def main(argv=None):
     btidx.add_argument('--market',choices=['AUTO','NIFTY','SENSEX','BOTH'],default='AUTO')
     btidx.add_argument('--cache-dir',default='trader/backtest_cache')
     btidx.add_argument('--out',default='trader/backtests/index_signals.json')
+    diag=sub.add_parser('paper-diagnose',help='Show exact local paper signal, stop, target and rejection reasons; read-only')
+    diag.add_argument('--date',required=True,help='YYYY-MM-DD')
+    diag.add_argument('--market',choices=['SENSEX','NIFTY'],required=True)
+    diag.add_argument('--directory',default='trader/paper_upstox')
     adv=sub.add_parser('paper-advanced',help='EXPERIMENTAL all-session multi-signal, long options + hedged credit spreads; paper ONLY')
     adv.add_argument('--market',choices=['NIFTY','SENSEX'],required=True)
     adv.add_argument('--master',default='trader/upstox_instruments.json')
@@ -169,6 +173,10 @@ def dispatch(a):
     if a.cmd=='db-report':
         from .storage import period_report
         dump(period_report(a.period,a.date,a.database));return 0
+    if a.cmd=='paper-diagnose':
+        from .diagnostics import diagnose_paper_sessions
+        dump(diagnose_paper_sessions(a.directory,a.date,a.market))
+        return 0
     if a.cmd=='backtest-index-signals':
         from .historical_backtest import annual_signal_backtest
         result=annual_signal_backtest(a.from_date,a.to_date,a.market,
