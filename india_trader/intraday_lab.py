@@ -107,12 +107,20 @@ def _liquid_leg(row, side, qty, max_spread_pct=2):
         return None
 
 
+def _fees_credit_breakdown(sell_bid,buy_ask,short_exit,long_exit,qty,exchange):
+    # Both legs have a buy and a sell, hence four hypothetical executions.
+    short_fees=option_fees(short_exit,sell_bid,qty,exchange,'UPSTOX')
+    hedge_fees=option_fees(buy_ask,long_exit,qty,exchange,'UPSTOX')
+    fields=('brokerage','stt','exchange_transaction_charge','gst',
+            'sebi','ipft','stamp_duty')
+    total={key:money(short_fees.get(key,0)+hedge_fees.get(key,0)) for key in fields}
+    total['total']=money(short_fees['total']+hedge_fees['total'])
+    total['broker_profile']='UPSTOX'
+    return total
+
+
 def _fees_credit_round_trip(sell_bid,buy_ask,short_exit,long_exit,qty,exchange):
-    # Short leg: premium sold now and bought back later.
-    # Long protection: bought now and sold later.
-    short_fees=option_fees(short_exit,sell_bid,qty,exchange,'UPSTOX')['total']
-    hedge_fees=option_fees(buy_ask,long_exit,qty,exchange,'UPSTOX')['total']
-    return money(short_fees+hedge_fees)
+    return _fees_credit_breakdown(sell_bid,buy_ask,short_exit,long_exit,qty,exchange)['total']
 
 
 def select_credit_spread(records,chain,market,direction,spot,today,settings,expiry=None,
@@ -238,14 +246,15 @@ def spread_mark(position,chain,market,now,stop_multiplier=2,target_fraction=.4):
     # Conservative close: buy back sold leg at ask; sell hedge at bid.
     exit_debit=short['ask']-long['bid']
     exchange=EXCHANGES[market][1]
-    fees=_fees_credit_round_trip(position['short_bid'],position['long_ask'],
+    fee_details=_fees_credit_breakdown(position['short_bid'],position['long_ask'],
                                   short['ask'],long['bid'],position['quantity'],exchange)
+    fees=fee_details['total']
     net=money((position['credit_per_unit']-exit_debit)*position['quantity']-fees)
     tm=now.astimezone(IST).time()
     cutoff=dt.time(14,45) if dt.date.fromisoformat(position['expiry'])==now.date() else dt.time(15,15)
     reason=('TIME_EXIT' if tm>=cutoff else
             'CREDIT_STOP' if exit_debit>=position['credit_per_unit']*stop_multiplier else
             'CREDIT_TARGET' if (exit_debit<=position['credit_per_unit']*target_fraction and net>0) else None)
-    return {'reason':reason,'net_pnl':net,'fees':fees,
+    return {'reason':reason,'net_pnl':net,'fees':fees,'fees_breakdown':fee_details,
             'exit_debit':money(exit_debit),'bid_long':long['bid'],
             'ask_short':short['ask'],'source':'INDICATIVE_REST_QUOTES_NOT_EXCHANGE_FILLS'}
