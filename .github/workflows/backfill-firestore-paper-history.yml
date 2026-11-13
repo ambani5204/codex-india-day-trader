@@ -1,0 +1,41 @@
+name: Backfill verified paper journals to Firebase
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'deploy/backfill_firestore_from_private_journals.py'
+      - '.github/workflows/backfill-firestore-paper-history.yml'
+permissions:
+  contents: read
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate backfill and publisher scripts
+        run: python -m py_compile deploy/backfill_firestore_from_private_journals.py deploy/firebase_live_publisher.py
+      - name: Install Firebase authentication
+        run: pip install google-auth requests
+      - name: Publish verified private archived paper journal
+        env:
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+          FIREBASE_PROJECT_ID: stock-market-c5016
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET missing"
+            exit 1
+          fi
+          if [ -z "$JOURNAL_REPO_TOKEN" ]; then
+            echo "::error::JOURNAL_REPO_TOKEN missing"
+            exit 1
+          fi
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firebase-key.json"
+          chmod 600 "$RUNNER_TEMP/firebase-key.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-key.json"
+          trap 'rm -f "$RUNNER_TEMP/firebase-key.json"' EXIT
+          python -m deploy.backfill_firestore_from_private_journals
