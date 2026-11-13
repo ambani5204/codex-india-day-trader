@@ -18,7 +18,7 @@ concurrency:
 jobs:
   frozen_forward_monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,16 +36,34 @@ jobs:
           restore-keys: |
             frozen-index-forward-v1-
 
+      - name: Run with up to three attempts
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/retry.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt/3: $*"
+            if "$@"; then exit 0; fi
+            if [[ "$attempt" == 3 ]]; then
+              echo "::error::All three attempts failed: $*"
+              exit 1
+            fi
+            sleep $((attempt * 30))
+          done
+          EOF
+          chmod +x "$RUNNER_TEMP/retry.sh"
+
       - name: Collect post-freeze sessions and test four FIXED hypotheses
         env:
           UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
         run: |
-          python -m india_trader.nightly_forward \
+          "$RUNNER_TEMP/retry.sh" python -m india_trader.nightly_forward \
             --out trader/backtests/nightly_forward_research.json
 
       - name: Render review proposal from verified report
         run: |
-          python -m india_trader.research_review \
+          "$RUNNER_TEMP/retry.sh" python -m india_trader.research_review \
             --report trader/backtests/nightly_forward_research.json \
             --markdown-out trader/backtests/nightly_research_review.md
 
@@ -79,7 +97,7 @@ jobs:
           chmod 600 "$RUNNER_TEMP/paper-evaluation-key.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/paper-evaluation-key.json"
           trap 'rm -f "$RUNNER_TEMP/paper-evaluation-key.json"' EXIT
-          python -m deploy.nightly_strategy_evaluation
+          "$RUNNER_TEMP/retry.sh" python -m deploy.nightly_strategy_evaluation
 
       - name: Preserve report, diagnostics and review proposal
         if: always()
