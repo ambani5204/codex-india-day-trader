@@ -97,7 +97,38 @@ jobs:
           chmod 600 "$RUNNER_TEMP/paper-evaluation-key.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/paper-evaluation-key.json"
           trap 'rm -f "$RUNNER_TEMP/paper-evaluation-key.json"' EXIT
-          "$RUNNER_TEMP/retry.sh" python -m deploy.nightly_strategy_evaluation
+          PAPER_EVALUATION_REPORT_PATH=trader/backtests/paper_evaluation.json "$RUNNER_TEMP/retry.sh" python -m deploy.nightly_strategy_evaluation
+
+      - name: Merge live paper-trade evidence with independent research
+        if: always()
+        shell: bash
+        run: |
+          if [ -f trader/backtests/paper_evaluation.json ]; then
+            python -m deploy.merged_strategy_review \
+              --paper trader/backtests/paper_evaluation.json \
+              --forward trader/backtests/nightly_forward_research.json \
+              --json-out trader/backtests/merged_strategy_review.json \
+              --markdown-out trader/backtests/merged_strategy_review.md
+          else
+            echo "::warning::No verified paper evaluation; merged report not produced"
+          fi
+
+      - name: Publish weekly ChatGPT handoff to one GitHub Issue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [ ! -f trader/backtests/merged_strategy_review.md ]; then
+            echo "No merged report to publish"
+            exit 0
+          fi
+          DOW="$(TZ=Asia/Kolkata date +%u)"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" || "$DOW" == "1" ]]; then
+            "$RUNNER_TEMP/retry.sh" python -m deploy.weekly_review_issue
+          else
+            echo "Weekly ChatGPT handoff will refresh on Monday"
+          fi
 
       - name: Preserve report, diagnostics and review proposal
         if: always()
@@ -107,5 +138,8 @@ jobs:
           path: |
             trader/backtests/nightly_forward_research.json
             trader/backtests/nightly_research_review.md
+            trader/backtests/paper_evaluation.json
+            trader/backtests/merged_strategy_review.json
+            trader/backtests/merged_strategy_review.md
           if-no-files-found: warn
           retention-days: 30
