@@ -84,6 +84,7 @@ def publish(data: dict) -> None:
 
 def loop(market: str, state_file: str, stop_file: str) -> None:
     run_id = os.environ.get("GITHUB_RUN_ID", "")
+    consecutive_failures = 0
     while True:
         state = Path(state_file).read_text().strip() if Path(state_file).exists() else "STARTING"
         if Path(stop_file).exists():
@@ -91,8 +92,12 @@ def loop(market: str, state_file: str, stop_file: str) -> None:
         try:
             publish(snapshot(market, state, run_id))
             print("Private Firestore session snapshot updated", flush=True)
+            consecutive_failures = 0
         except Exception as exc:
+            consecutive_failures += 1
             print("Firestore update failed:", type(exc).__name__, str(exc)[:160], flush=True)
+            if consecutive_failures >= 3:
+                raise RuntimeError("Firestore publisher failed three consecutive writes") from exc
         if Path(stop_file).exists():
             break
         time.sleep(30)
