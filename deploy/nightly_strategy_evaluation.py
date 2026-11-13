@@ -127,6 +127,13 @@ def main():
         if not token:
             break
     report = evaluate(rows)
+    output = os.environ.get("PAPER_EVALUATION_REPORT_PATH")
+    if output:
+        import json
+        from pathlib import Path
+        destination = Path(output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     for doc in ("latest", report["report_date"]):
         response = session.patch(base + "paper_evaluations/" + doc,
             json={"fields": {k: firestore_field(v) for k, v in report.items()}}, timeout=25)
