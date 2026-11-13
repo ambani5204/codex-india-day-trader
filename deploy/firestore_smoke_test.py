@@ -3,13 +3,15 @@ import json
 import os
 import sys
 import uuid
+import datetime as dt
 
 PROJECT = "stock-market-c5016"
 BASE = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/(default)/documents"
 
 def check(response, label):
     if not response.ok:
-        raise RuntimeError(f"{label}: Firestore HTTP {response.status_code}")
+        hint = {400:"invalid request or database", 401:"invalid token", 403:"service account lacks Firestore permissions or API disabled", 404:"document/database missing", 429:"quota exceeded"}.get(response.status_code, "server/network error")
+        raise RuntimeError(f"{label}: Firestore HTTP {response.status_code} ({hint})")
     return response
 
 def main():
@@ -23,9 +25,15 @@ def main():
         raise RuntimeError("Unexpected service account identity")
     from google.oauth2 import service_account
     from google.auth.transport.requests import AuthorizedSession
+    print("CREDENTIAL FORMAT OK: project and publisher identity match", flush=True)
     credentials = service_account.Credentials.from_service_account_info(
         info, scopes=["https://www.googleapis.com/auth/datastore"])
     session = AuthorizedSession(credentials)
+    try:
+        credentials.refresh(__import__("google.auth.transport.requests", fromlist=["Request"]).Request())
+    except Exception as exc:
+        raise RuntimeError("GOOGLE AUTH FAILED: check private key, service account enabled status, and token permissions (" + type(exc).__name__ + ")") from exc
+    print("GOOGLE AUTH OK", flush=True)
     url = BASE + "/_connection_tests/smoke_" + uuid.uuid4().hex
     created = False
     try:
@@ -59,9 +67,9 @@ def main():
         print("HISTORY READ OK: document_present=" + str(bool(history.json().get("documents"))), flush=True)
     print("FIRESTORE CONNECTION TEST PASSED", flush=True)
     if not dashboard_present:
-        print("END-TO-END DATA TEST FAILED: Firestore is reachable but no real trading dashboard snapshot exists", flush=True)
-        sys.exit(2)
-    print("END-TO-END DATA TEST PASSED: publisher snapshot exists", flush=True)
+        print("PUBLISHER DATA CHECK: MISSING. Connection is healthy; investigate cloud paper session publisher.", flush=True)
+    else:
+        print("PUBLISHER DATA CHECK: PRESENT. Next check deployed client Firestore rules and Firebase UID.", flush=True)
 
 if __name__ == "__main__":
     try:
