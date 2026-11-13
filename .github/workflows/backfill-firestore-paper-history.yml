@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'deploy/backfill_firestore_from_private_journals.py'
+      - 'deploy/firebase_live_publisher.py'
       - '.github/workflows/backfill-firestore-paper-history.yml'
 permissions:
   contents: read
