@@ -24,6 +24,28 @@ def evaluate(rows, now=None):
         if isinstance(row.get("net_pnl"), (int, float)):
             m["net_pnl"] += float(row["net_pnl"])
             m["pnl_sessions"] += 1
+    # Review the strategies actually executed, not hypothetical index-only setups.
+    strategies = defaultdict(lambda: {"closed_trades": 0, "verified_trades": 0,
+        "winning_trades": 0, "losing_trades": 0, "net_pnl": 0.0,
+        "modeled_stop_coverage": 0, "stop_exceedances": 0})
+    for row in valid:
+        for strategy, values in (row.get("strategy_stats") or {}).items():
+            key = row["market"] + ":" + strategy
+            dest = strategies[key]
+            for field in ("closed_trades", "verified_trades", "winning_trades",
+                          "losing_trades", "modeled_stop_coverage", "stop_exceedances"):
+                dest[field] += int(values.get(field) or 0)
+            if isinstance(values.get("net_pnl"), (int, float)):
+                dest["net_pnl"] += float(values["net_pnl"])
+    strategy_report = {}
+    for name, v in strategies.items():
+        strategy_report[name] = {**v,
+            "net_pnl": round(v["net_pnl"], 2) if v["verified_trades"] else None,
+            "win_rate": round(100 * v["winning_trades"] /
+                (v["winning_trades"] + v["losing_trades"]), 1)
+                if v["winning_trades"] + v["losing_trades"] else None,
+            "review_flag": "INSUFFICIENT_SAMPLE" if v["verified_trades"] < 30
+                else "STOP_MODEL_REVIEW" if v["stop_exceedances"] else "MONITOR"}
     return {
         "report_date": now.date().isoformat(),
         "generated_at": now.isoformat(),
@@ -36,6 +58,7 @@ def evaluate(rows, now=None):
         "signals": sum(int(r.get("signals_count") or 0) for r in valid),
         "risk_rejections": sum(int(r.get("rejected_count") or 0) for r in valid),
         "system_errors": sum(int(r.get("errors_count") or 0) for r in valid),
+        "strategy_reviews": strategy_report,
         "markets": {k: {**v, "net_pnl": round(v["net_pnl"], 2) if v["pnl_sessions"] else None}
                     for k, v in by_market.items()},
         "change_verified": False,
