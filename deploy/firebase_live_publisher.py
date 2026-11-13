@@ -177,7 +177,7 @@ def publish(data: dict) -> None:
         return {"stringValue": str(value)}
     response = session.patch(url, json={"fields": {k: field(v) for k, v in data.items()}}, timeout=25)
     response.raise_for_status()
-    history_url = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/paper_history/{data['date_ist']}"
+    history_url = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/paper_history/{data['date_ist']}_{data['market']}"
     history = {k: v for k, v in data.items() if k not in ("events", "trade_ledger")}
     result = session.patch(history_url, json={"fields": {k: field(v) for k, v in history.items()}}, timeout=25)
     result.raise_for_status()
