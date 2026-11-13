@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install google-auth requests
-      - name: Test service account, Firestore write, read and cleanup
+      - name: Test service account, Firestore write, read, cleanup and dashboard status
         env:
           FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
         run: python -m deploy.firestore_smoke_test
