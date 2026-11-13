@@ -65,6 +65,22 @@ jobs:
             echo "Nightly research complete; updating the single review Issue on Monday."
           fi
 
+      - name: Publish actual paper-trade strategy evaluation
+        if: always()
+        env:
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          FIREBASE_PROJECT_ID: stock-market-c5016
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install google-auth requests
+          test -n "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" || { echo "::error::Missing Firestore service account"; exit 1; }
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/paper-evaluation-key.json"
+          chmod 600 "$RUNNER_TEMP/paper-evaluation-key.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/paper-evaluation-key.json"
+          trap 'rm -f "$RUNNER_TEMP/paper-evaluation-key.json"' EXIT
+          python -m deploy.nightly_strategy_evaluation
+
       - name: Preserve report, diagnostics and review proposal
         if: always()
         uses: actions/upload-artifact@v4
