@@ -1,0 +1,38 @@
+name: Nightly paper strategy evaluation
+on:
+  schedule:
+    - cron: '30 15 * * 1-5' # 21:00 IST weekdays
+  workflow_dispatch:
+  push:
+    paths:
+      - 'deploy/nightly_strategy_evaluation.py'
+      - 'tests/test_nightly_strategy_evaluation.py'
+      - '.github/workflows/nightly-strategy-evaluation.yml'
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate and test evaluator
+        run: |
+          python -m py_compile deploy/nightly_strategy_evaluation.py
+          python -m unittest discover -s tests -p 'test_nightly_strategy_evaluation.py' -v
+      - name: Install Firebase authentication
+        run: pip install google-auth requests
+      - name: Publish nightly evaluation to private Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          FIREBASE_PROJECT_ID: stock-market-c5016
+        run: |
+          test -n "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" || { echo "::error::Firebase credential missing"; exit 1; }
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firebase-key.json"
+          chmod 600 "$RUNNER_TEMP/firebase-key.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-key.json"
+          trap 'rm -f "$RUNNER_TEMP/firebase-key.json"' EXIT
+          python -m deploy.nightly_strategy_evaluation
