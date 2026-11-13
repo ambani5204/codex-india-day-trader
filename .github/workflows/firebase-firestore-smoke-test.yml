@@ -21,3 +21,4 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
         run: python -m deploy.firestore_smoke_test
+# Retest trigger after service-account key rotation; no credentials stored in source.
