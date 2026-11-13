@@ -63,8 +63,9 @@ def main():
         raise RuntimeError("Unable to inspect existing dashboard: HTTP " + str(response.status_code))
     if response.status_code == 200:
         existing_day = response.json().get("fields", {}).get("date_ist", {}).get("stringValue", "")
-        if existing_day >= day:
-            print("Existing dashboard is as recent or newer; preserving it")
+        status = response.json().get("fields", {}).get("session_status", {}).get("stringValue", "")
+        if existing_day > day or (existing_day == day and status not in ("ARCHIVED_SESSION", "FINISHED", "FAILED")):
+            print("Existing live or newer dashboard preserved")
             return
     publish(data)
     print("VERIFIED ARCHIVE PUBLISHED: date=" + day + " market=" + market +
