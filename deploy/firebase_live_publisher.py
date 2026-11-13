@@ -94,6 +94,30 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
             "selection_basis": str(contract.get("selection") or ""),
 
         })
+    # Aggregate closed trades by the entry strategy recorded at decision time.
+    # Unknown attribution is explicit; never infer a strategy from a later signal.
+    strategy_stats = {}
+    for trade in trade_ledger:
+        name = trade.get("entry_strategy") or "UNATTRIBUTED"
+        stat = strategy_stats.setdefault(name, {"closed_trades": 0, "verified_trades": 0,
+            "winning_trades": 0, "losing_trades": 0, "net_pnl": 0.0,
+            "modeled_stop_total": 0.0, "modeled_stop_coverage": 0,
+            "stop_exceedances": 0})
+        stat["closed_trades"] += 1
+        pnl = trade.get("net_pnl")
+        if isinstance(pnl, (int, float)) and not isinstance(pnl, bool):
+            stat["verified_trades"] += 1
+            stat["net_pnl"] += float(pnl)
+            stat["winning_trades"] += int(pnl > 0)
+            stat["losing_trades"] += int(pnl < 0)
+            modeled = trade.get("estimated_stop_loss_inr")
+            if isinstance(modeled, (int, float)) and modeled > 0:
+                stat["modeled_stop_coverage"] += 1
+                stat["modeled_stop_total"] += float(modeled)
+                stat["stop_exceedances"] += int(-float(pnl) > float(modeled))
+    for stat in strategy_stats.values():
+        stat["net_pnl"] = round(stat["net_pnl"], 2) if stat["verified_trades"] else None
+        stat["modeled_stop_total"] = round(stat["modeled_stop_total"], 2)
     recent = []
     for e in important[-35:][::-1]:
         recent.append({
@@ -122,6 +146,7 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
         "drawdown_basis": "REALIZED_CLOSED_TRADE_EQUITY",
         "pnl_coverage": len(closed_with_pnl),
         "trade_ledger": trade_ledger,
+        "strategy_stats": strategy_stats,
         "rejected_count": len(rejected),
         "errors_count": len(errors),
         "events": recent,
