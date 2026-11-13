@@ -1,0 +1,23 @@
+name: Firebase Firestore connection smoke test
+on:
+  push:
+    paths:
+      - 'deploy/firestore_smoke_test.py'
+      - '.github/workflows/firebase-firestore-smoke-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-firestore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install google-auth requests
+      - name: Test service account, Firestore write, read and cleanup
+        env:
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+        run: python -m deploy.firestore_smoke_test
