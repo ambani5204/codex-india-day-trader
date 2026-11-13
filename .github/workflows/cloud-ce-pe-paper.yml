@@ -45,7 +45,38 @@ jobs:
         if: steps.gate.outputs.should_run == 'true'
         id: session
         continue-on-error: true
-        run: python -m deploy.cloud_paper_session
+        env:
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          FIREBASE_PROJECT_ID: stock-market-c5016
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" ]; then
+            echo "Firebase publisher not configured; running paper session without live dashboard"
+            python -m deploy.cloud_paper_session
+            exit $?
+          fi
+          pip -q install google-auth requests
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firebase-service-account.json"
+          chmod 600 "$RUNNER_TEMP/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
+          export PAPER_MARKET="$(python -c 'import datetime; from india_trader.core import IST; from india_trader.schedule import market_for_day; print(market_for_day(datetime.datetime.now(IST).date()) or "NONE")')"
+          export PAPER_STATE_FILE="$RUNNER_TEMP/paper-state"
+          export PAPER_STOP_FILE="$RUNNER_TEMP/paper-stop"
+          echo STARTING > "$PAPER_STATE_FILE"
+          python -m deploy.firebase_live_publisher &
+          PUBLISHER_PID=$!
+          cleanup() {
+            touch "$PAPER_STOP_FILE"
+            wait "$PUBLISHER_PID" || true
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          }
+          trap cleanup EXIT
+          echo RUNNING > "$PAPER_STATE_FILE"
+          set +e
+          python -m deploy.cloud_paper_session
+          result=$?
+          set -e
+          if [ "$result" -ne 0 ]; then echo FAILED > "$PAPER_STATE_FILE"; fi
+          exit "$result"
       - name: Upload detailed journals ONLY to verified PRIVATE repository
         if: always() && steps.gate.outputs.should_run == 'true' && steps.session.outcome != 'skipped'
         id: private_upload
