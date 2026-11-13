@@ -9,6 +9,15 @@ def evaluate(rows, now=None):
     now = now or dt.datetime.now(IST)
     valid = [r for r in rows if r.get("data_type") == "PAPER_SIMULATION"
              and r.get("date_ist") and r.get("market") in ("NIFTY", "SENSEX")]
+    # Legacy date-only documents and newer date_market documents can coexist.
+    # Retain the latest snapshot for each actual market session.
+    unique = {}
+    for row in valid:
+        key = (row["date_ist"], row["market"])
+        previous = unique.get(key)
+        if previous is None or str(row.get("updated_at") or "") > str(previous.get("updated_at") or ""):
+            unique[key] = row
+    valid = list(unique.values())
     valid.sort(key=lambda r: (r["date_ist"], r["market"]))
     trades = sum(int(r.get("closed_trades") or 0) for r in valid)
     covered = sum(int(r.get("pnl_coverage") or 0) for r in valid)
