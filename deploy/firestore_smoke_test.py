@@ -41,11 +41,13 @@ def main():
             check(session.delete(url, timeout=25), "CLEANUP")
             print("CLEANUP OK", flush=True)
 
+    dashboard_present = False
     dashboard = session.get(BASE + "/paper_dashboard/latest", timeout=25)
     if dashboard.status_code == 404:
         print("DASHBOARD MISSING: trading publisher has not created paper_dashboard/latest", flush=True)
     else:
         check(dashboard, "DASHBOARD READ")
+        dashboard_present = True
         fields = dashboard.json().get("fields", {})
         print("DASHBOARD FOUND: status=" + str(fields.get("session_status", {}).get("stringValue", "unknown")) +
               " updated_at=" + str(fields.get("updated_at", {}).get("stringValue", "unknown")), flush=True)
@@ -56,6 +58,10 @@ def main():
         check(history, "HISTORY READ")
         print("HISTORY READ OK: document_present=" + str(bool(history.json().get("documents"))), flush=True)
     print("FIRESTORE CONNECTION TEST PASSED", flush=True)
+    if not dashboard_present:
+        print("END-TO-END DATA TEST FAILED: Firestore is reachable but no real trading dashboard snapshot exists", flush=True)
+        sys.exit(2)
+    print("END-TO-END DATA TEST PASSED: publisher snapshot exists", flush=True)
 
 if __name__ == "__main__":
     try:
