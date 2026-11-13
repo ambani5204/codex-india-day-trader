@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 JOURNALS = ROOT / "trader" / "paper_upstox"
 
 
-def snapshot(market: str, state: str, run_id: str) -> dict:
-    today = dt.datetime.now(IST).date().isoformat()
+def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> dict:
+    today = day or dt.datetime.now(IST).date().isoformat()
     records = []
     for path in sorted(JOURNALS.glob(f"{today}_{market}_*.jsonl")):
         try:
