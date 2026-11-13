@@ -1,43 +1,65 @@
-"""Non-trading Firestore connectivity smoke test. Writes and removes a disposable test document."""
+"""Safe Firebase smoke test: disposable write/read/delete plus dashboard presence check."""
 import json
 import os
 import sys
-import tempfile
-from pathlib import Path
+import uuid
+
+PROJECT = "stock-market-c5016"
+BASE = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/(default)/documents"
+
+def check(response, label):
+    if not response.ok:
+        raise RuntimeError(f"{label}: Firestore HTTP {response.status_code}")
+    return response
 
 def main():
     raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET", "")
     if not raw:
-        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET is not configured")
-    credentials_data = json.loads(raw)
-    assert credentials_data["type"] == "service_account", "Secret is not a service account JSON"
-    assert credentials_data["project_id"] == "stock-market-c5016", "Wrong Firebase project"
-    assert credentials_data["client_email"].startswith("paper-trading-publisher@"), "Wrong service account"
+        raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET secret missing")
+    info = json.loads(raw)
+    if info.get("type") != "service_account" or info.get("project_id") != PROJECT:
+        raise RuntimeError("Invalid service account type or Firebase project")
+    if not info.get("client_email", "").startswith("paper-trading-publisher@"):
+        raise RuntimeError("Unexpected service account identity")
     from google.oauth2 import service_account
     from google.auth.transport.requests import AuthorizedSession
     credentials = service_account.Credentials.from_service_account_info(
-        credentials_data, scopes=["https://www.googleapis.com/auth/datastore"])
+        info, scopes=["https://www.googleapis.com/auth/datastore"])
     session = AuthorizedSession(credentials)
-    url = "https://firestore.googleapis.com/v1/projects/stock-market-c5016/databases/(default)/documents/_connection_tests/github_smoke_test"
-    print("Credential parsed and authenticated; testing Firestore write/read/delete", flush=True)
+    url = BASE + "/_connection_tests/smoke_" + uuid.uuid4().hex
+    created = False
     try:
-        response = session.patch(url, json={"fields": {"status": {"stringValue": "ok"}}}, timeout=25)
-        response.raise_for_status()
+        response = check(session.patch(url, json={"fields": {"status": {"stringValue": "ok"}}}, timeout=25), "WRITE")
+        created = True
         print("WRITE OK", flush=True)
-        response = session.get(url, timeout=25)
-        response.raise_for_status()
-        assert response.json()["fields"]["status"]["stringValue"] == "ok"
+        response = check(session.get(url, timeout=25), "READ")
+        if response.json().get("fields", {}).get("status", {}).get("stringValue") != "ok":
+            raise RuntimeError("READ returned unexpected data")
         print("READ OK", flush=True)
     finally:
-        response = session.delete(url, timeout=25)
-        if response.status_code not in (200, 404):
-            response.raise_for_status()
-        print("CLEANUP OK", flush=True)
+        if created:
+            check(session.delete(url, timeout=25), "CLEANUP")
+            print("CLEANUP OK", flush=True)
+
+    dashboard = session.get(BASE + "/paper_dashboard/latest", timeout=25)
+    if dashboard.status_code == 404:
+        print("DASHBOARD MISSING: trading publisher has not created paper_dashboard/latest", flush=True)
+    else:
+        check(dashboard, "DASHBOARD READ")
+        fields = dashboard.json().get("fields", {})
+        print("DASHBOARD FOUND: status=" + str(fields.get("session_status", {}).get("stringValue", "unknown")) +
+              " updated_at=" + str(fields.get("updated_at", {}).get("stringValue", "unknown")), flush=True)
+    history = session.get(BASE + "/paper_history?pageSize=1", timeout=25)
+    if history.status_code == 404:
+        print("HISTORY MISSING: no published daily history", flush=True)
+    else:
+        check(history, "HISTORY READ")
+        print("HISTORY READ OK: document_present=" + str(bool(history.json().get("documents"))), flush=True)
     print("FIRESTORE CONNECTION TEST PASSED", flush=True)
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception as error:
-        print("FIRESTORE CONNECTION TEST FAILED: " + type(error).__name__ + ": " + str(error)[:240], file=sys.stderr)
+    except Exception as exc:
+        print("FIRESTORE CONNECTION TEST FAILED: " + type(exc).__name__ + ": " + str(exc)[:180], file=sys.stderr)
         sys.exit(1)
