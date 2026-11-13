@@ -51,6 +51,22 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
         max_drawdown = max(max_drawdown, peak - equity)
     trade_ledger = []
     for e in sorted(closed, key=lambda item: str(item.get("timestamp", "")), reverse=True)[:30]:
+        entry_time = str(e.get("buy_time") or "")
+        symbol = str(e.get("symbol") or "")
+        session_id = str(e.get("session") or "")
+        prior = [x for x in records if str(x.get("session") or "") == session_id
+                 and str(x.get("timestamp") or "") <= entry_time]
+        entry_signals = [x for x in prior if x.get("event") == "ENTRY_SIGNAL"
+                         and str(x.get("symbol") or "") == symbol]
+        entry_signal = max(entry_signals, key=lambda x: str(x.get("timestamp") or ""), default={})
+        signal_time = str(entry_signal.get("timestamp") or "")
+        selections = [x for x in prior if x.get("event") == "OPTION_SELECTION"
+                      and str((x.get("contract") or {}).get("symbol") or "") == symbol
+                      and (not signal_time or str(x.get("timestamp") or "") <= signal_time)]
+        selection = max(selections, key=lambda x: str(x.get("timestamp") or ""), default={})
+        contract = selection.get("contract") or {}
+        plan = contract.get("risk_plan") or {}
+        index_plan = contract.get("index_stop_plan") or {}
         trade_ledger.append({
             "time": str(e.get("timestamp") or ""),
             "entry_time": str(e.get("buy_time") or ""),
@@ -63,6 +79,20 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
             "fees": (e.get("fees") or {}).get("total"),
             "net_pnl": e.get("net_pnl"),
             "exit_reason": str(e.get("reason") or ""),
+            "entry_strategy": str(entry_signal.get("reason") or ""),
+            "signal_time": signal_time,
+            "entry_explanation_available": bool(entry_signal and selection),
+            "index_spot_at_decision": index_plan.get("index_spot"),
+            "index_stop_at_decision": index_plan.get("index_stop"),
+            "index_target_at_decision": index_plan.get("index_target"),
+            "risk_budget_inr": plan.get("risk_cap_inr"),
+            "estimated_stop_loss_inr": plan.get("estimated_stop_loss_including_charges"),
+            "planned_target_price": plan.get("target_bid"),
+            "planned_stop_price": plan.get("stop_bid"),
+            "planned_reward_risk": plan.get("net_reward_risk"),
+            "option_delta": contract.get("delta"),
+            "selection_basis": str(contract.get("selection") or ""),
+
         })
     recent = []
     for e in important[-35:][::-1]:
