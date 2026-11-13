@@ -18,6 +18,8 @@ jobs:
           python-version: '3.11'
       - name: Validate backfill and publisher scripts
         run: python -m py_compile deploy/backfill_firestore_from_private_journals.py deploy/firebase_live_publisher.py
+      - name: Test trading analytics calculations
+        run: python -m unittest tests.test_firebase_dashboard_analytics -v
       - name: Install Firebase authentication
         run: pip install google-auth requests
       - name: Publish verified private archived paper journal
