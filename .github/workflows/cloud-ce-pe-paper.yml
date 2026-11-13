@@ -3,11 +3,14 @@ name: Cloud CE-PE live paper trading (NO REAL ORDERS)
 on:
   workflow_dispatch:
   schedule:
-    # 03:55 UTC = 09:25 IST, weekdays. Scheduled starts can be delayed.
+    # Retry opportunities: 09:25, 09:45, 10:05, 10:25, 10:45 IST.
     - cron: "55 3 * * 1-5"
+    - cron: "15,35,55 4 * * 1-5"
+    - cron: "15 5 * * 1-5"
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: cloud-ce-pe-paper-session
@@ -25,25 +28,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Prevent duplicate market-day sessions across retry triggers
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m deploy.cloud_session_gate
       - name: Offline safety and unit tests
+        if: steps.gate.outputs.should_run == 'true'
         run: python -m unittest discover -s tests -q
       - name: Verify PRIVATE archive destination before trading
+        if: steps.gate.outputs.should_run == 'true'
         env:
           JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
         run: python -m deploy.private_journal_sync --verify-only
       - name: Run live option-quote CE/PE paper session (read only)
+        if: steps.gate.outputs.should_run == 'true'
         id: session
         continue-on-error: true
         run: python -m deploy.cloud_paper_session
       - name: Upload detailed journals ONLY to verified PRIVATE repository
-        if: always() && steps.session.outcome != 'skipped'
+        if: always() && steps.gate.outputs.should_run == 'true' && steps.session.outcome != 'skipped'
         id: private_upload
         continue-on-error: true
         env:
           JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
         run: python -m deploy.private_journal_sync
       - name: Publish ONLY public-safe aggregate (never raw quotes/journals)
-        if: always()
+        if: always() && steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: public-safe-ce-pe-summary-${{ github.run_id }}
@@ -51,7 +62,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Fail visibly when session failed or was incomplete
-        if: steps.session.outcome != 'success' || steps.private_upload.outcome != 'success'
+        if: steps.gate.outputs.should_run == 'true' && (steps.session.outcome != 'success' || steps.private_upload.outcome != 'success')
         run: |
           echo "Cloud paper session failed or incomplete. See aggregate diagnostics."
           exit 1
