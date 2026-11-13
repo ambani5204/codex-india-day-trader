@@ -50,9 +50,8 @@ jobs:
           FIREBASE_PROJECT_ID: stock-market-c5016
         run: |
           if [ -z "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" ]; then
-            echo "Firebase publisher not configured; running paper session without live dashboard"
-            python -m deploy.cloud_paper_session
-            exit $?
+            echo "::error::Firebase service account secret is missing; cannot publish dashboard"
+            exit 1
           fi
           pip -q install google-auth requests
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firebase-service-account.json"
@@ -64,10 +63,14 @@ jobs:
           echo STARTING > "$PAPER_STATE_FILE"
           python -m deploy.firebase_live_publisher &
           PUBLISHER_PID=$!
+          PUBLISHER_STATUS=0
           cleanup() {
             touch "$PAPER_STOP_FILE"
-            wait "$PUBLISHER_PID" || true
+            wait "$PUBLISHER_PID" || PUBLISHER_STATUS=$?
             rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+            if [ "$PUBLISHER_STATUS" -ne 0 ]; then
+              echo "::error::Firestore publisher exited with code $PUBLISHER_STATUS"
+            fi
           }
           trap cleanup EXIT
           echo RUNNING > "$PAPER_STATE_FILE"
@@ -76,6 +79,9 @@ jobs:
           result=$?
           set -e
           if [ "$result" -ne 0 ]; then echo FAILED > "$PAPER_STATE_FILE"; fi
+          cleanup
+          trap - EXIT
+          if [ "$PUBLISHER_STATUS" -ne 0 ]; then exit "$PUBLISHER_STATUS"; fi
           exit "$result"
       - name: Upload detailed journals ONLY to verified PRIVATE repository
         if: always() && steps.gate.outputs.should_run == 'true' && steps.session.outcome != 'skipped'
