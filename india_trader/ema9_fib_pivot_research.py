@@ -26,11 +26,11 @@ def fibonacci_pivots(bars):
             "S2": p - .618 * span, "S3": p - span}
 
 
-def signals(bars, previous_bars, rr=2.0):
+def signals(bars, previous_bars, rr=2.0, entry_cutoff=dt.time(12, 0)):
     """Require close crossing a pivot AND EMA9 on the same completed 5m bar.
 
     EMA seeded by SMA9 of current session; prior-day pivot uses only prior OHLC.
-    Stop at signal candle opposite extreme; one entry per session.
+    Stop at signal candle opposite extreme; one entry per session.\n    Research V2: signals must close before entry_cutoff (default noon IST).
     """
     if rr not in (2.0, 3.0):
         raise ValueError("RR must be 2 or 3")
@@ -47,7 +47,7 @@ def signals(bars, previous_bars, rr=2.0):
         prev = bars[i - 1]
         if bar.time.date() != bars[0].time.date():
             raise ValueError("Session candles must belong to one date")
-        if bar.time.time() >= dt.time(14, 45):
+        if (bar.time + dt.timedelta(minutes=5)).time() >= entry_cutoff:
             continue
         for name, level in pivots.items():
             bullish = prev.close <= level < bar.close and bar.close > ema and prev.close <= prior_ema
@@ -70,7 +70,7 @@ def signals(bars, previous_bars, rr=2.0):
     return out
 
 
-def evaluate(sessions, slippage=1.0):
+def evaluate(sessions, slippage=1.0, entry_cutoff=dt.time(12, 0)):
     """Stop-first when target and stop touch same bar; force EOD exit."""
     by_market = {}
     results = []
@@ -80,7 +80,7 @@ def evaluate(sessions, slippage=1.0):
         prior = by_market.get(market)
         if bars and prior and len(bars) >= 10:
             for rr in (2.0, 3.0):
-                found = signals(bars, prior, rr)
+                found = signals(bars, prior, rr, entry_cutoff=entry_cutoff)
                 if not found:
                     continue
                 s = found[0]
@@ -125,9 +125,9 @@ def evaluate(sessions, slippage=1.0):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", required=True)
+    parser.add_argument("--out", required=True)\n    parser.add_argument("--entry-cutoff", default="12:00", help="Last allowed signal close time in IST, HH:MM (V2 default 12:00; baseline 14:45)")
     parser.add_argument("--days", type=int, default=365, help="Completed calendar days to examine (default 365)")
-    args = parser.parse_args()
+    args = parser.parse_args()\n    try:\n        cutoff = dt.time.fromisoformat(args.entry_cutoff)\n    except ValueError:\n        parser.error("--entry-cutoff must be HH:MM")
     end = dt.datetime.now(IST).date() - dt.timedelta(days=1)
     if not 30 <= args.days <= 730:
         parser.error("--days must be between 30 and 730")
@@ -140,7 +140,7 @@ def main():
         sessions = _load_sessions(start, end, "BOTH", __import__(
             "india_trader.index_intraday_backtest", fromlist=["_LazyHistoricalReader"]
         )._LazyHistoricalReader(), "trader/backtest_cache")
-        report["results"] = evaluate(sessions)
+        report["results"] = evaluate(sessions, entry_cutoff=cutoff)\n        report["entry_cutoff_ist"] = cutoff.isoformat()
         report["session_count"] = sum(bool(x["bars"]) for x in sessions)
         report["markets"] = ["NIFTY", "SENSEX"]
         report["status"] = "RESEARCH_ONLY_NOT_DEPLOYMENT_APPROVAL"
