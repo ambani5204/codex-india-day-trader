@@ -1,0 +1,46 @@
+name: One-year EMA9 Fibonacci pivot research
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'india_trader/ema9_fib_pivot_research.py'
+      - 'tests/test_ema9_fib_pivot_research.py'
+      - '.github/workflows/ema9-fib-one-year-backtest.yml'
+permissions:
+  contents: read
+jobs:
+  one_year:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate test code
+        run: python -m unittest tests.test_ema9_fib_pivot_research -v
+      - name: Run last 365 days of completed NIFTY and SENSEX 5-minute sessions
+        env:
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if python -m india_trader.ema9_fib_pivot_research --days 365 --out trader/backtests/ema9_fib_one_year.json; then break; fi
+            if [[ "$attempt" == 3 ]]; then exit 1; fi
+            sleep $((attempt * 30))
+          done
+      - name: Print summary from genuine data
+        run: |
+          python - <<'PY'
+          import json
+          d=json.load(open('trader/backtests/ema9_fib_one_year.json'))
+          print('PERIOD',d['start_date'],d['end_date'],'SESSIONS',d.get('session_count'))
+          for name,v in d['results'].items():
+              print(name, json.dumps(v['metrics'],sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ema9-fib-365-day-nifty-sensex
+          path: trader/backtests/ema9_fib_one_year.json
+          retention-days: 30
