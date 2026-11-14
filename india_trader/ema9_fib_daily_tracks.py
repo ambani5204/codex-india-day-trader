@@ -57,8 +57,10 @@ def main():
     p.add_argument("--day", default=None, help="Completed market day YYYY-MM-DD")
     p.add_argument("--out", required=True)
     args = p.parse_args()
+    now = dt.datetime.now(IST)
     date = (dt.date.fromisoformat(args.day) if args.day else
-            dt.datetime.now(IST).date() - dt.timedelta(days=1))
+            (now.date() if now.time() >= dt.time(16, 0)
+             else now.date() - dt.timedelta(days=1)))
     sessions = _load_sessions(date-dt.timedelta(days=12), date, "BOTH",
                               _LazyHistoricalReader(), "trader/backtest_cache")
     output = {
