@@ -1,0 +1,56 @@
+name: Daily EMA9 Fibonacci V2 separate paper research tracks
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 17 * * 1-5"
+permissions:
+  contents: read
+concurrency:
+  group: ema9-fib-v2-daily
+  cancel-in-progress: false
+jobs:
+  daily_signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate strategy tests
+        run: python -m unittest discover -s tests -p 'test_ema9_fib_pivot_research.py' -v
+      - name: Restore candle cache
+        uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: ema9-daily-${{ github.run_id }}
+          restore-keys: |
+            ema9-daily-
+      - name: Generate distinct NIFTY and SENSEX research intents
+        env:
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+        run: |
+          test -n "$UPSTOX_ACCESS_TOKEN" || { echo "::error::Missing UPSTOX_ACCESS_TOKEN"; exit 1; }
+          python -m india_trader.ema9_fib_daily_tracks --out trader/backtests/ema9_fib_daily_tracks.json
+      - name: Publish signal-only monitoring summaries to Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          FIREBASE_PROJECT_ID: stock-market-c5016
+          DAILY_TRACK_REPORT: trader/backtests/ema9_fib_daily_tracks.json
+        run: |
+          set -euo pipefail
+          test -n "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" || { echo "::error::Missing Firebase service account"; exit 1; }
+          python -m pip install google-auth requests
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firestore-key.json"
+          chmod 600 "$RUNNER_TEMP/firestore-key.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firestore-key.json"
+          trap 'rm -f "$RUNNER_TEMP/firestore-key.json"' EXIT
+          python -m deploy.publish_ema9_daily_signals
+      - name: Preserve daily track report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ema9-fib-v2-daily-tracks
+          path: trader/backtests/ema9_fib_daily_tracks.json
+          if-no-files-found: warn
+          retention-days: 30
