@@ -126,17 +126,23 @@ def evaluate(sessions, slippage=1.0):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", required=True)
+    parser.add_argument("--days", type=int, default=365, help="Completed calendar days to examine (default 365)")
     args = parser.parse_args()
     end = dt.datetime.now(IST).date() - dt.timedelta(days=1)
-    start = dt.date(2026, 11, 13)
+    if not 30 <= args.days <= 730:
+        parser.error("--days must be between 30 and 730")
+    start = end - dt.timedelta(days=args.days - 1)
     report = {"kind": "EMA9_FIB_PIVOT_PAPER_RESEARCH_ONLY",
               "status": "AWAITING_MARKET_DATA", "results": {},
+              "start_date": start.isoformat(), "end_date": end.isoformat(),
               "warning": "Spot index / hypothetical futures-cost proxy; NOT options P&L"}
     if end >= start:
         sessions = _load_sessions(start, end, "BOTH", __import__(
             "india_trader.index_intraday_backtest", fromlist=["_LazyHistoricalReader"]
         )._LazyHistoricalReader(), "trader/backtest_cache")
         report["results"] = evaluate(sessions)
+        report["session_count"] = sum(bool(x["bars"]) for x in sessions)
+        report["markets"] = ["NIFTY", "SENSEX"]
         report["status"] = "RESEARCH_ONLY_NOT_DEPLOYMENT_APPROVAL"
     path = Path(args.out)
     path.parent.mkdir(parents=True, exist_ok=True)
