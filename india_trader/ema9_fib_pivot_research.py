@@ -130,7 +130,10 @@ def main():
     parser.add_argument("--entry-cutoff", default="12:00", help="Last allowed signal close time in IST, HH:MM (V2 default 12:00; baseline 14:45)")
     parser.add_argument("--days", type=int, default=365, help="Completed calendar days to examine (default 365)")
     args = parser.parse_args()
-    try:\n        cutoff = dt.time.fromisoformat(args.entry_cutoff)\n    except ValueError:\n        parser.error("--entry-cutoff must be HH:MM")
+    try:
+        cutoff = dt.time.fromisoformat(args.entry_cutoff)
+    except ValueError:
+        parser.error("--entry-cutoff must be HH:MM")
     end = dt.datetime.now(IST).date() - dt.timedelta(days=1)
     if not 30 <= args.days <= 730:
         parser.error("--days must be between 30 and 730")
@@ -150,7 +153,8 @@ def main():
         report["status"] = "RESEARCH_ONLY_NOT_DEPLOYMENT_APPROVAL"
     path = Path(args.out)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, default=str) + "\n")
+    path.write_text(json.dumps(report, indent=2, default=str) + "
+")
     print("EMA9_FIB_PIVOT_RESEARCH", report["status"])
 
 
