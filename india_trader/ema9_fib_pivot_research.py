@@ -153,8 +153,7 @@ def main():
         report["status"] = "RESEARCH_ONLY_NOT_DEPLOYMENT_APPROVAL"
     path = Path(args.out)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, default=str) + "
-")
+    path.write_text(json.dumps(report, indent=2, default=str) + "\n")
     print("EMA9_FIB_PIVOT_RESEARCH", report["status"])
 
 
