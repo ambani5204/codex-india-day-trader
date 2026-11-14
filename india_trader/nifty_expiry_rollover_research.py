@@ -1,11 +1,10 @@
-"""Late NIFTY expiry reversal/rollover: independent research, NO live orders.
+"""Late NIFTY intraday reversal/rollover: independent research, NO live orders.
 
 Uses 5-minute index OHLC as a direction-only proxy, NOT historical option
-premiums. Expiry dates must be explicitly supplied and verified externally.
+premiums. All complete NIFTY trading sessions are eligible, not only expiries.
 """
 from __future__ import annotations
 import argparse
-import csv
 import datetime as dt
 import json
 from pathlib import Path
@@ -109,46 +108,35 @@ def replay(bars,day,slippage=1.,rr=1.5):
     return {"status":"OK" if pos is None and pending is None else "UNRESOLVED",
             "signals":len(signals),"trades":trades}
 
-def load_expiries(path):
-    if not path:return None
-    with open(path,newline="") as f:
-        rows=list(csv.DictReader(f))
-    if not rows or "date" not in rows[0]:
-        raise ValueError("Expiry CSV requires date column")
-    return {dt.date.fromisoformat(r["date"]) for r in rows}
-
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--days",type=int,default=365)
-    p.add_argument("--expiry-csv",help="Verified NIFTY expiry dates CSV with date column")
     p.add_argument("--out",required=True)
     a=p.parse_args()
     if not 30<=a.days<=730:p.error("days must be 30..730")
     end=dt.datetime.now(IST).date()-dt.timedelta(days=1)
     start=end-dt.timedelta(days=a.days-1)
-    expiries=load_expiries(a.expiry_csv)
-    report={"strategy":"NIFTY_EXPIRY_REVERSAL_ROLLOVER_V1",
+    report={"strategy":"NIFTY_INTRADAY_REVERSAL_ROLLOVER_V1",
             "start":start.isoformat(),"end":end.isoformat(),
             "mode":"INDEX_DIRECTION_PROXY_ONLY","real_orders":False,
-            "expiry_calendar_verified":expiries is not None,
-            "status":"AWAITING_VERIFIED_EXPIRY_CALENDAR" if expiries is None else "PENDING_DATA",
-            "warning":"No historical option premium, spreads, IV, theta, or expiry settlement modeled"}
-    if expiries is not None:
-        sessions=_load_sessions(start,end,"NIFTY",_LazyHistoricalReader(),"trader/backtest_cache")
-        results=[replay(s["bars"],s["day"]) for s in sessions if s["day"] in expiries]
-        trades=[t for r in results if r["status"]=="OK" for t in r["trades"]]
-        wins=[t for t in trades if t["index_points"]>0]
-        losses=[t for t in trades if t["index_points"]<0]
-        report.update({"status":"INDEX_PROXY_RESEARCH_ONLY","expiry_sessions":len(results),
-                       "complete_sessions":sum(r["status"]=="OK" for r in results),
-                       "incomplete_sessions":sum(r["status"]!="OK" for r in results),
-                       "signals":sum(r["signals"] for r in results),
-                       "trades":len(trades),"wins":len(wins),"losses":len(losses),
-                       "win_rate_pct":round(100*len(wins)/len(trades),2) if trades else None,
-                       "net_index_points":round(sum(t["index_points"] for t in trades),2),
-                       "total_r":round(sum(t["realized_r"] for t in trades),3),
-                       "trade_details":trades})
+            "session_filter":"ALL_NIFTY_TRADING_DAYS",
+            "status":"PENDING_DATA",
+            "warning":"Spot index points only; not actual options or futures P&L"}
+    sessions=_load_sessions(start,end,"NIFTY",_LazyHistoricalReader(),"trader/backtest_cache")
+    results=[replay(s["bars"],s["day"]) for s in sessions if s["bars"]]
+    trades=[t for r in results if r["status"]=="OK" for t in r["trades"]]
+    wins=[t for t in trades if t["index_points"]>0]
+    losses=[t for t in trades if t["index_points"]<0]
+    report.update({"status":"INDEX_PROXY_RESEARCH_ONLY","trading_sessions":len(results),
+                   "complete_sessions":sum(r["status"]=="OK" for r in results),
+                   "incomplete_sessions":sum(r["status"]!="OK" for r in results),
+                   "signals":sum(r["signals"] for r in results),
+                   "trades":len(trades),"wins":len(wins),"losses":len(losses),
+                   "win_rate_pct":round(100*len(wins)/len(trades),2) if trades else None,
+                   "net_index_points":round(sum(t["index_points"] for t in trades),2),
+                   "total_r":round(sum(t["realized_r"] for t in trades),3),
+                   "trade_details":trades})
     out=Path(a.out);out.parent.mkdir(parents=True,exist_ok=True)
     out.write_text(json.dumps(report,indent=2)+"\n")
-    print("EXPIRY_REVERSAL_RESEARCH",report["status"])
+    print("INTRADAY_REVERSAL_RESEARCH",report["status"])
 if __name__=="__main__":main()
