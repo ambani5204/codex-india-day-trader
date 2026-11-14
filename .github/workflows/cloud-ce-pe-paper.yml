@@ -74,13 +74,26 @@ jobs:
           }
           trap cleanup EXIT
           echo RUNNING > "$PAPER_STATE_FILE"
+          # EMA9 V2 is an independent paper-only sidecar within THIS existing workflow.
+          # Its journal and Firestore collection are isolated from legacy strategies.
+          python tools/india.py upstox-sync || echo "::warning::EMA9 instrument refresh failed"
+          python -m india_trader.ema9_v2_live_sidecar &
+          EMA9_PID=$!
           set +e
           python -m deploy.cloud_paper_session
           result=$?
           set -e
           if [ "$result" -ne 0 ]; then echo FAILED > "$PAPER_STATE_FILE"; fi
+          # Allow the EMA9 sidecar to complete its paper session and publish
+          # its separate results without affecting legacy trade execution.
+          EMA9_STATUS=0
+          wait "$EMA9_PID" || EMA9_STATUS=$?
+          if [ -f "trader/ema9_v2_live/$(TZ=Asia/Kolkata date +%F).jsonl" ]; then
+            python -m deploy.publish_ema9_v2_paper || EMA9_STATUS=$?
+          fi
           cleanup
           trap - EXIT
+          if [ "$EMA9_STATUS" -ne 0 ]; then echo "::warning::EMA9 V2 sidecar failed ($EMA9_STATUS)"; fi
           if [ "$PUBLISHER_STATUS" -ne 0 ]; then exit "$PUBLISHER_STATUS"; fi
           exit "$result"
       - name: Upload detailed journals ONLY to verified PRIVATE repository
