@@ -1,0 +1,46 @@
+name: EMA9 V2 NIFTY and SENSEX live paper sidecar
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "50 3 * * 1-5"
+permissions:
+  contents: read
+concurrency:
+  group: ema9-v2-live-paper
+  cancel-in-progress: false
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 359
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+      FIREBASE_PROJECT_ID: stock-market-c5016
+      FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify Python syntax and tests
+        run: |
+          python -m compileall -q india_trader/ema9_v2_live_sidecar.py deploy/publish_ema9_v2_paper.py
+          python -m unittest discover -s tests -p 'test_ema9_fib_pivot_research.py' -q
+      - name: Verify paper-only credentials
+        run: |
+          test -n "$UPSTOX_ACCESS_TOKEN" || { echo "::error::Missing Upstox token"; exit 1; }
+          test -n "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" || { echo "::error::Missing Firebase credentials"; exit 1; }
+      - name: Refresh instruments
+        run: python tools/india.py upstox-sync
+      - name: Simulate NIFTY and SENSEX EMA9 V2 independently
+        run: python -m india_trader.ema9_v2_live_sidecar
+      - name: Publish completed paper summaries to Firestore
+        if: always()
+        run: |
+          if [ -f "trader/ema9_v2_live/$(TZ=Asia/Kolkata date +%F).jsonl" ]; then
+            python -m pip install -q google-auth requests
+            printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/ema9-firebase.json"
+            chmod 600 "$RUNNER_TEMP/ema9-firebase.json"
+            export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/ema9-firebase.json"
+            python -m deploy.publish_ema9_v2_paper
+            rm -f "$RUNNER_TEMP/ema9-firebase.json"
+          fi
