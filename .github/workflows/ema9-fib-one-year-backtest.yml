@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Validate test code
-        run: python -m unittest tests.test_ema9_fib_pivot_research -v
+        run: python -m unittest discover -s tests -p 'test_ema9_fib_pivot_research.py' -v
       - name: Run last 365 days of completed NIFTY and SENSEX 5-minute sessions
         env:
           UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
