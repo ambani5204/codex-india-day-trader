@@ -1,0 +1,48 @@
+name: One-time NIFTY 365-day intraday rollover backtest
+on:
+  push:
+    paths:
+      - .github/workflows/nifty-rollover-backtest-once.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify token and tests
+        run: |
+          test -n "$UPSTOX_ACCESS_TOKEN" || { echo "::error::UPSTOX_ACCESS_TOKEN missing"; exit 1; }
+          python -m unittest discover -s tests -p 'test_nifty_expiry_rollover_research.py' -v
+      - uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: nifty-rollover-backtest-365-${{ github.run_id }}
+          restore-keys: |
+            nifty-rollover-backtest-365-
+            ema9-fib-365-
+            frozen-index-forward-v1-
+      - name: Run 365-day NIFTY intraday backtest
+        run: |
+          python -m india_trader.nifty_expiry_rollover_research --days 365 --out trader/backtests/nifty_rollover_365.json
+          python - <<'PY'
+          import json
+          x=json.load(open('trader/backtests/nifty_rollover_365.json'))
+          for k in ('start','end','trading_sessions','complete_sessions','incomplete_sessions','signals','trades','wins','losses','win_rate_pct','net_index_points','total_r'):
+              print(k, x.get(k))
+          if x.get('complete_sessions',0)<150:
+              raise SystemExit('Insufficient historical coverage; do not claim results')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nifty-intraday-rollover-365-results
+          path: trader/backtests/nifty_rollover_365.json
+          retention-days: 30
