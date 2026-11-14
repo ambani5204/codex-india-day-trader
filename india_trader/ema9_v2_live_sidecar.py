@@ -15,14 +15,16 @@ from .ema9_fib_pivot_research import signals
 from .paper_sim import option_fees
 
 OUT=Path("trader/ema9_v2_live")
-def run_market(market, api, records, now, positions, finished, events):
+def run_market(market, api, records, now, positions, finished, events, prior_cache):
     day=now.date()
     bars=sorted((b for b in api.candles(INDICES[market]) if b.time.date()==day
                  and b.time+dt.timedelta(minutes=5)<=now),key=lambda b:b.time)
     if not bars:return
-    prev=sorted((b for b in api.historical_index_candles(INDICES[market],
+    if market not in prior_cache:
+        prior_cache[market]=sorted((b for b in api.historical_index_candles(INDICES[market],
                   day-dt.timedelta(days=7),day-dt.timedelta(days=1)) if b.time.date()<day),
                 key=lambda b:b.time)
+    prev=prior_cache[market]
     # Upstox intraday endpoint may omit previous session; no guessed pivots.
     if not prev:
         events.append({"market":market,"event":"PREVIOUS_SESSION_UNAVAILABLE","time":now.isoformat()})
@@ -103,15 +105,15 @@ def main():
     from .upstox import load_today_master
     records=load_today_master("trader/upstox_instruments.json",now.date())
     api=UpstoxReader()
-    positions={};finished=set();events=[]
+    positions={};finished=set();events=[];prior_cache={}
     path=OUT/(now.date().isoformat()+".jsonl")
     # A duplicate runner must not generate duplicate paper fills.
     if path.exists():raise RuntimeError("EMA9 V2 sidecar already started today")
     with path.open("x") as journal:
-        while dt.datetime.now(IST).time()<dt.time(15,20):
+        while dt.datetime.now(IST).time()<dt.time(15,10):
             now=dt.datetime.now(IST)
             for market in ("NIFTY","SENSEX"):
-                try:run_market(market,api,records,now,positions,finished,events)
+                try:run_market(market,api,records,now,positions,finished,events,prior_cache)
                 except (UpstoxError,ValueError,KeyError) as exc:
                     events.append({"event":"DATA_ERROR","market":market,"time":now.isoformat(),
                                    "reason":type(exc).__name__})
