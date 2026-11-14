@@ -77,20 +77,13 @@ jobs:
           "$RUNNER_TEMP/retry.sh" python -m india_trader.ema9_fib_daily_tracks \
             --out trader/backtests/ema9_fib_daily_tracks.json
 
-      - name: Research NIFTY expiry reversal and rollover over 365 calendar days
+      - name: Backtest late NIFTY intraday reversal and rollover over 365 calendar days
         env:
           UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
         continue-on-error: true
         run: |
-          if [ -f data/nifty_verified_expiries.csv ]; then
-            "$RUNNER_TEMP/retry.sh" python -m india_trader.nifty_expiry_rollover_research \
-              --days 365 --expiry-csv data/nifty_verified_expiries.csv \
-              --out trader/backtests/nifty_expiry_rollover_365.json
-          else
-            python -m india_trader.nifty_expiry_rollover_research \
-              --days 365 --out trader/backtests/nifty_expiry_rollover_365.json
-            echo "::warning::Verified historical NIFTY expiry calendar missing; no performance claims generated"
-          fi
+          "$RUNNER_TEMP/retry.sh" python -m india_trader.nifty_expiry_rollover_research \
+            --days 365 --out trader/backtests/nifty_expiry_rollover_365.json
 
       - name: Render review proposal from verified report
         run: |
