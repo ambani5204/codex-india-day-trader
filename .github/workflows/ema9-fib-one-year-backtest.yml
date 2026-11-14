@@ -19,6 +19,13 @@ jobs:
           python-version: '3.11'
       - name: Validate test code
         run: python -m unittest discover -s tests -p 'test_ema9_fib_pivot_research.py' -v
+      - name: Restore historical index cache
+        uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: ema9-fib-365-${{ github.run_id }}
+          restore-keys: |
+            ema9-fib-365-
       - name: Run V2 morning-only backtest on last 365 completed calendar days
         env:
           UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
@@ -42,7 +49,7 @@ jobs:
           for path in (Path("trader/backtests/ema9_fib_one_year.json"), Path("trader/backtests/ema9_fib_baseline.json")):
               data=json.loads(path.read_text())
               print("REPORT", path, "PERIOD", data["start_date"], data["end_date"], "SESSIONS", data.get("session_count"), "CUTOFF", data.get("entry_cutoff_ist"))
-              if data.get("session_count", 0) < 200:
+              if data.get("session_count", 0) < 350:
                   raise SystemExit("Insufficient session coverage for a 365-calendar-day two-index backtest")
               for name, value in data["results"].items():
                   print(name, json.dumps(value["metrics"], sort_keys=True))
@@ -60,5 +67,7 @@ jobs:
         if: always()
         with:
           name: ema9-fib-365-day-nifty-sensex
-          path: |\n            trader/backtests/ema9_fib_one_year.json\n            trader/backtests/ema9_fib_baseline.json
+          path: |
+            trader/backtests/ema9_fib_one_year.json
+            trader/backtests/ema9_fib_baseline.json
           retention-days: 30
