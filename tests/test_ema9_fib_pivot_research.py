@@ -21,6 +21,16 @@ class Ema9FibPivotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             signals([], [], 1.5)
 
+    def test_morning_cutoff_blocks_afternoon_breakout(self):
+        previous = self.bars(dt.date(2026, 11, 12), [100] * 10)
+        # P=100; candle at 12:00 breaks above both P and EMA9.
+        closes = [100] * 33 + [110]
+        today = self.bars(dt.date(2026, 11, 13), closes)
+        self.assertEqual(signals(today, previous, 3.0), [])
+        baseline = signals(today, previous, 3.0, entry_cutoff=dt.time(14, 45))
+        self.assertEqual(len(baseline), 1)
+        self.assertEqual(baseline[0]["direction"], "BULL")
+
     def test_no_signal_without_enough_closed_candles(self):
         self.assertEqual(signals(self.bars(dt.date(2026, 11, 13), [100]*9),
                                  self.bars(dt.date(2026, 11, 12), [100]*10)), [])
