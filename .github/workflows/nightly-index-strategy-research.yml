@@ -77,14 +77,6 @@ jobs:
           "$RUNNER_TEMP/retry.sh" python -m india_trader.ema9_fib_daily_tracks \
             --out trader/backtests/ema9_fib_daily_tracks.json
 
-      - name: Backtest late NIFTY intraday reversal and rollover over 365 calendar days
-        env:
-          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
-        continue-on-error: true
-        run: |
-          "$RUNNER_TEMP/retry.sh" python -m india_trader.nifty_expiry_rollover_research \
-            --days 365 --out trader/backtests/nifty_expiry_rollover_365.json
-
       - name: Render review proposal from verified report
         run: |
           "$RUNNER_TEMP/retry.sh" python -m india_trader.research_review \
@@ -184,7 +176,6 @@ jobs:
             trader/backtests/ema9_fib_pivot_research.json
             trader/backtests/ema9_fib_daily_tracks.json
             trader/backtests/ema9_v2_weekly.json
-            trader/backtests/nifty_expiry_rollover_365.json
             trader/backtests/nightly_research_review.md
             trader/backtests/paper_evaluation.json
             trader/backtests/merged_strategy_review.json
