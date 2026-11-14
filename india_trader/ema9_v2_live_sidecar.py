@@ -20,7 +20,8 @@ def run_market(market, api, records, now, positions, finished, events):
     bars=sorted((b for b in api.candles(INDICES[market]) if b.time.date()==day
                  and b.time+dt.timedelta(minutes=5)<=now),key=lambda b:b.time)
     if not bars:return
-    prev=sorted((b for b in api.candles(INDICES[market]) if b.time.date()<day),
+    prev=sorted((b for b in api.historical_index_candles(INDICES[market],
+                  day-dt.timedelta(days=7),day-dt.timedelta(days=1)) if b.time.date()<day),
                 key=lambda b:b.time)
     # Upstox intraday endpoint may omit previous session; no guessed pivots.
     if not prev:
