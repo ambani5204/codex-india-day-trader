@@ -19,16 +19,34 @@ jobs:
           python-version: '3.11'
       - name: Validate test code
         run: python -m unittest discover -s tests -p 'test_ema9_fib_pivot_research.py' -v
-      - name: Run last 365 days of completed NIFTY and SENSEX 5-minute sessions
+      - name: Run V2 morning-only backtest on last 365 completed calendar days
         env:
           UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if python -m india_trader.ema9_fib_pivot_research --days 365 --out trader/backtests/ema9_fib_one_year.json; then break; fi
+            if python -m india_trader.ema9_fib_pivot_research --days 365 --entry-cutoff 12:00 --out trader/backtests/ema9_fib_one_year.json; then break; fi
             if [[ "$attempt" == 3 ]]; then exit 1; fi
             sleep $((attempt * 30))
           done
+      - name: Run baseline with original 14:45 cutoff
+        env:
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+        run: |
+          python -m india_trader.ema9_fib_pivot_research --days 365 --entry-cutoff 14:45 --out trader/backtests/ema9_fib_baseline.json
+      - name: Verify data coverage and compare strategy variants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in (Path("trader/backtests/ema9_fib_one_year.json"), Path("trader/backtests/ema9_fib_baseline.json")):
+              data=json.loads(path.read_text())
+              print("REPORT", path, "PERIOD", data["start_date"], data["end_date"], "SESSIONS", data.get("session_count"), "CUTOFF", data.get("entry_cutoff_ist"))
+              if data.get("session_count", 0) < 200:
+                  raise SystemExit("Insufficient session coverage for a 365-calendar-day two-index backtest")
+              for name, value in data["results"].items():
+                  print(name, json.dumps(value["metrics"], sort_keys=True))
+          PY
       - name: Print summary from genuine data
         run: |
           python - <<'PY'
@@ -42,5 +60,5 @@ jobs:
         if: always()
         with:
           name: ema9-fib-365-day-nifty-sensex
-          path: trader/backtests/ema9_fib_one_year.json
+          path: |\n            trader/backtests/ema9_fib_one_year.json\n            trader/backtests/ema9_fib_baseline.json
           retention-days: 30
