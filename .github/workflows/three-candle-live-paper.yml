@@ -50,10 +50,3 @@ jobs:
           ) &
           PUBLISHER_PID=$!
           python -m india_trader.three_candle_live_sidecar
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: three-candle-paper-aggregate-${{ github.run_id }}
-          path: trader/three_candle_live/*.jsonl
-          if-no-files-found: warn
-          retention-days: 7
