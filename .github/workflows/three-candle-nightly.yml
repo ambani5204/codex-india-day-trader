@@ -1,0 +1,49 @@
+name: Nightly 3 Candle Top Down signal audit
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "45 17 * * 1-5"
+permissions:
+  contents: read
+concurrency:
+  group: three-candle-nightly
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+      FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+      FIREBASE_PROJECT_ID: stock-market-c5016
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: three-candle-nightly-${{ github.run_id }}
+          restore-keys: |
+            three-candle-nightly-
+      - name: Validate research and nightly publisher
+        run: |
+          python -m py_compile deploy/three_candle_nightly.py india_trader/three_candle_top_down_v2.py
+      - name: Audit latest completed session and publish Firestore
+        run: |
+          set -euo pipefail
+          test -n "$UPSTOX_ACCESS_TOKEN"
+          test -n "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET"
+          python -m pip install -q google-auth requests
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firebase-three-candle.json"
+          chmod 600 "$RUNNER_TEMP/firebase-three-candle.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-three-candle.json"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          python -m deploy.three_candle_nightly
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: three-candle-nightly-summary-${{ github.run_id }}
+          path: trader/backtests/three_candle_nightly.json
+          if-no-files-found: warn
