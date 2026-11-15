@@ -1,0 +1,59 @@
+name: Two-agent one-time intraday strategy research
+on:
+  push:
+    paths:
+      - .github/workflows/two-agent-intraday-research-once.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  agent1_rollover_optimization:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: agent1-nifty-${{ github.run_id }}
+          restore-keys: |
+            nifty-rollover-backtest-365-
+            ema9-fib-365-
+      - name: Agent 1 - bounded reversal optimization and holdout
+        run: |
+          python -m india_trader.rollover_agent1_optimizer --out trader/backtests/agent1_rollover.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent1-rollover-research
+          path: trader/backtests/agent1_rollover.json
+  agent2_ema9_stocks_options:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: agent2-ema9-${{ github.run_id }}
+          restore-keys: |
+            ema9-fib-365-
+            nifty-rollover-backtest-365-
+      - name: Agent 2 - EMA9 V2 365-day index benchmark and data feasibility
+        run: |
+          python -m india_trader.ema9_agent2_universe_audit --out trader/backtests/agent2_ema9.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent2-ema9-research
+          path: trader/backtests/agent2_ema9.json
