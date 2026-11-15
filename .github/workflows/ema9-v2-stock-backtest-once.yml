@@ -1,0 +1,34 @@
+name: One-time EMA9 V2 NSE stock intraday 365-day backtest
+on:
+  push:
+    paths:
+      - .github/workflows/ema9-v2-stock-backtest-once.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  stock_intraday:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: ema9-v2-stock-${{ github.run_id }}
+          restore-keys: |
+            ema9-v2-stock-
+      - name: Run 365-day 10-stock EMA9 Fibonacci V2 intraday research
+        run: |
+          test -n "$UPSTOX_ACCESS_TOKEN"
+          python -m india_trader.ema9_v2_stock_intraday_backtest --days 365 --out trader/backtests/ema9_v2_stocks_365.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ema9-v2-stock-intraday-365
+          path: trader/backtests/ema9_v2_stocks_365.json
