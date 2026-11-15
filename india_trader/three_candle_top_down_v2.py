@@ -80,15 +80,16 @@ def test_day(bars,prior,market,day,rr,live_prefix=False):
         # State 4: later OB touch, enter at following candle open. No lookahead.
         if zone is not None and i>zone[2]:
             low,high,formed=zone
-            if b.low<=high and b.high>=low and i+1<len(seq):
-                nxt=seq[i+1];entry=nxt.open+bias
+            if b.low<=high and b.high>=low and (i+1<len(seq) or live_prefix):
+                nxt=seq[i+1] if i+1<len(seq) else None
+                entry=(nxt.open if nxt is not None else b.close)+bias
                 stop=low-1 if bias==1 else high+1
                 risk=bias*(entry-stop)
                 if 0<risk<=entry*.012:
                     stages["valid_retest_entry"]+=1
                     position={"side":bias,"entry":entry,"stop":stop,"risk":risk,
                               "target":entry+bias*rr*risk,"entry_i":i+1,
-                              "entry_time":nxt.time.isoformat(),
+                              "entry_time":(nxt.time if nxt is not None else b.time+dt.timedelta(minutes=5)).isoformat(),
                               "sweep_time":seq[sweep_idx].time.isoformat(),
                               "order_block":[low,high]}
                 else:stages["invalid_risk"]+=1
