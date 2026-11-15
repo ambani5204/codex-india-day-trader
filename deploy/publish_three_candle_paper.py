@@ -19,7 +19,11 @@ def main():
         trades=[x for x in rows if x.get("event")=="OPTION_PAPER_CLOSED"]
         open_count=sum(x.get("event")=="OPTION_PAPER_OPEN" for x in rows)
         closed_count=len(trades)
-        data={"date_ist":day,"market":market,"strategy":"THREE_CANDLE_TOP_DOWN_V2",
+        last=rows[-1] if rows else {}
+        data={"last_event":last.get("event"),"last_event_time":last.get("time"),
+              "last_symbol":last.get("symbol"),
+              "open_positions":max(0,open_count-closed_count-sum(x.get("event")=="UNRESOLVED_POSITION" for x in rows)),
+              "date_ist":day,"market":market,"strategy":"THREE_CANDLE_TOP_DOWN_V2",
               "instrument":"CE_PE_OPTION_BUY","mode":"PAPER_ONLY_NO_ORDERS",
               "opened":open_count,"closed_trades":closed_count,
               "unresolved":sum(x.get("event")=="UNRESOLVED_POSITION" for x in rows),
