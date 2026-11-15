@@ -1,0 +1,39 @@
+name: Nightly EMA9 EMA15 candle-stop research (NO ORDERS)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 17 * * 1-5"
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: ema-nightly-${{ github.run_id }}
+          restore-keys: |
+            ema-nightly-
+            ema9-ema15-365-
+      - name: Validate code
+        run: |
+          python -m py_compile india_trader/ema9_ema15_live_rules.py deploy/ema9_ema15_nightly.py
+          python -m unittest discover -s tests -q
+      - name: Audit recent sessions and compare slope/body settings
+        run: |
+          test -n "$UPSTOX_ACCESS_TOKEN"
+          python -m deploy.ema9_ema15_nightly
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ema9-ema15-nightly-${{ github.run_id }}
+          path: trader/backtests/ema9_ema15_nightly.json
+          if-no-files-found: warn
