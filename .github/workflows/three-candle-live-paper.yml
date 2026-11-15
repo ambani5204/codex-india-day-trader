@@ -49,4 +49,24 @@ jobs:
             done
           ) &
           PUBLISHER_PID=$!
+          python -m india_trader.three_candle_live_sidecar      - name: Live paper simulation and continuous Firestore publication
+        run: |
+          set -euo pipefail
+          test -n "$UPSTOX_ACCESS_TOKEN"
+          test -n "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET"
+          python -m pip install -q google-auth requests
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firebase-three-candle.json"
+          chmod 600 "$RUNNER_TEMP/firebase-three-candle.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-three-candle.json"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          python tools/india.py upstox-sync
+          python -m deploy.three_candle_live_publisher &
+          PUBLISHER_PID=$!
+          set +e
           python -m india_trader.three_candle_live_sidecar
+          SESSION_RESULT=$?
+          set -e
+          python -m deploy.publish_three_candle_paper || exit 1
+          kill "$PUBLISHER_PID" 2>/dev/null || true
+          wait "$PUBLISHER_PID" 2>/dev/null || true
+          exit "$SESSION_RESULT"
