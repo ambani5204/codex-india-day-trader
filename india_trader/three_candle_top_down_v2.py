@@ -11,9 +11,13 @@ from .core import IST
 from .research_optimizer import _load_sessions,futures_cost_proxy
 from .index_intraday_backtest import _LazyHistoricalReader
 
-def test_day(bars,prior,market,day,rr):
+def test_day(bars,prior,market,day,rr,live_prefix=False):
     clock={b.time:b for b in bars}
     expected=[dt.datetime.combine(day,dt.time(9,15),IST)+dt.timedelta(minutes=5*i) for i in range(75)]
+    if live_prefix:
+        expected=[t for t in expected if t in clock]
+        if not expected or expected[0].time()!=dt.time(9,15) or any((b-a)!=dt.timedelta(minutes=5) for a,b in zip(expected,expected[1:])):
+            return "INCOMPLETE",None,Counter()
     if any(t not in clock for t in expected):return "INCOMPLETE",None,Counter()
     seq=[clock[t] for t in expected]
     pdh=max(b.high for b in prior);pdl=min(b.low for b in prior)
@@ -90,6 +94,8 @@ def test_day(bars,prior,market,day,rr):
                 else:stages["invalid_risk"]+=1
                 if position is None:return "OK",None,stages
             if i-formed>18:return "OK",None,stages
+    if live_prefix and position:
+        return "OPEN_SIGNAL",position,stages
     return "OK",None,stages
 
 def summary(trades,stages,incomplete):
