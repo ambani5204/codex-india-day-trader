@@ -1,0 +1,51 @@
+name: EMA9 EMA15 live CE PE paper (NO ORDERS)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "55 3 * * 1-5"
+permissions:
+  contents: read
+concurrency:
+  group: ema9-ema15-live-paper
+  cancel-in-progress: false
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 359
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+      FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+      FIREBASE_PROJECT_ID: stock-market-c5016
+      EMA_PAPER_CAPITAL_INR: "30000"
+      EMA_MAX_SPREAD_PCT: "2"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Offline validation
+        run: |
+          python -m py_compile india_trader/ema9_ema15_live_rules.py india_trader/ema9_ema15_live_sidecar.py deploy/ema9_ema15_live_publisher.py deploy/publish_ema9_ema15_paper.py
+          python -m unittest discover -s tests -q
+      - name: Run read-only paper market session
+        run: |
+          set -euo pipefail
+          test -n "$UPSTOX_ACCESS_TOKEN"
+          test -n "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET"
+          python -m pip install -q google-auth requests
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firebase-ema.json"
+          chmod 600 "$RUNNER_TEMP/firebase-ema.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-ema.json"
+          trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+          python tools/india.py upstox-sync
+          python -m deploy.ema9_ema15_live_publisher &
+          PUBLISHER_PID=$!
+          set +e
+          python -m india_trader.ema9_ema15_live_sidecar
+          RESULT=$?
+          set -e
+          python -m deploy.publish_ema9_ema15_paper
+          kill "$PUBLISHER_PID" 2>/dev/null || true
+          wait "$PUBLISHER_PID" 2>/dev/null || true
+          exit "$RESULT"
