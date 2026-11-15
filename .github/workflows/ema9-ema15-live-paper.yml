@@ -2,7 +2,7 @@ name: EMA9 EMA15 live CE PE paper (NO ORDERS)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "55 3 * * 1-5"
+    - cron: "30 3 * * 1-5"
 permissions:
   contents: read
 concurrency:
