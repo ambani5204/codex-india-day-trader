@@ -33,7 +33,7 @@ def run():
             for market in ("NIFTY","SENSEX"):
                 try:
                     allbars=api.candles(INDICES[market])
-                    bars=sorted((b for b in allbars if b.time.date()==now.date() and b.time<=now),
+                    bars=sorted((b for b in allbars if b.time.date()==now.date() and b.time+dt.timedelta(minutes=5)<=now),
                                 key=lambda b:b.time)
                     if not bars:continue
                     if market not in previous:
