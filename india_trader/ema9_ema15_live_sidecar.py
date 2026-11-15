@@ -32,7 +32,8 @@ def run():
                     bars=sorted((b for b in raw if b.time.date()==now.date() and b.time+dt.timedelta(minutes=5)<=now),key=lambda b:b.time)
                     if len(bars)<21:continue
                     latest=bars[-1]
-                    # Process each completed bar exactly once; never look into the current bar.
+                    next_bar=next((b for b in raw if b.time.date()==now.date() and b.time==latest.time+dt.timedelta(minutes=5)),None)
+                    # Evaluate signals on completed bars; use only the next forming bar OPEN for entry.
                     if last_processed.get(market)==latest.time:continue
                     last_processed[market]=latest.time
                     if market in positions:
@@ -51,12 +52,19 @@ def run():
                                      quantity=pos["quantity"],entry_price=pos["premium_entry"],exit_price=q.bid,fees_inr=fee,
                                      net_pnl_inr=round((q.bid-pos["premium_entry"])*pos["quantity"]-fee,2),reason=event if event!="OPEN" else "TIME_EXIT")
                                 del positions[market]
-                    if market in pending and market not in positions:
+                    if market not in done and market not in positions and market not in pending:
+                        sig=detect(bars)
+                        if sig:
+                            pending[market]=sig
+                            emit(f,event="INDEX_SIGNAL",market=market,time=now.isoformat(),direction="CE" if sig.side==1 else "PE",
+                                 signal_time=sig.signal_time,signal_close=sig.signal_close,index_stop=sig.candle_stop,
+                                 angle=sig.angle,body_fraction=sig.body_fraction)
+                    if market in pending and market not in positions and next_bar is not None:
                         sig=pending.pop(market)
                         if market in done:continue
                         # Next bar open is not a tradable quote from completed candles.
                         # Use first observed live index snapshot after signal close, not synthetic open fill.
-                        spot=latest.close
+                        spot=next_bar.open
                         try: idx={**levels(sig,spot),"side":sig.side,"t1_hit":False}
                         except ValueError:
                             emit(f,event="ENTRY_BLOCKED",market=market,time=now.isoformat(),reason="INDEX_ENTRY_CROSSED_CANDLE_STOP")
@@ -75,13 +83,7 @@ def run():
                                  option_type=contract["option_type"],quantity=qty,entry_price=q.ask,premium_outlay=q.ask*qty,
                                  index_entry=spot,index_stop=idx["stop"],index_r=idx["risk_points"],index_t1=idx["t1"],index_t2=idx["t2"])
                         done.add(market)
-                    if market not in done and market not in positions and market not in pending:
-                        sig=detect(bars)
-                        if sig:
-                            pending[market]=sig
-                            emit(f,event="INDEX_SIGNAL",market=market,time=now.isoformat(),direction="CE" if sig.side==1 else "PE",
-                                 signal_time=sig.signal_time,signal_close=sig.signal_close,index_stop=sig.candle_stop,
-                                 angle=sig.angle,body_fraction=sig.body_fraction)
+
                 except (UpstoxError,ValueError,KeyError) as exc:
                     emit(f,event="DATA_ERROR",market=market,time=now.isoformat(),reason=type(exc).__name__)
             time.sleep(20)
