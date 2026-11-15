@@ -19,8 +19,10 @@ def event(journal,**data):
 
 def run():
     now=dt.datetime.now(IST)
-    if now.weekday()>4 or not dt.time(9,15)<=now.time()<dt.time(14,45):
-        print("Not a valid market-hour startup");return
+    if now.weekday()>4 or now.time()>=dt.time(14,45):
+        print("Outside market-day startup");return
+    while dt.datetime.now(IST).time()<dt.time(9,15):
+        time.sleep(5)
     if not os.environ.get("UPSTOX_ACCESS_TOKEN"):raise RuntimeError("Missing Upstox token")
     api=UpstoxReader();records=load_today_master("trader/upstox_instruments.json",now.date())
     OUT.mkdir(parents=True,exist_ok=True)
