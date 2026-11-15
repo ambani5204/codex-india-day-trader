@@ -1,0 +1,38 @@
+name: One-time EMA9 EMA15 365-day multi-scenario V2 research
+on:
+  push:
+    paths:
+      - .github/workflows/ema9-ema15-robustness-v2-once.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: ema9-ema15-v2-${{ github.run_id }}
+          restore-keys: |
+            ema9-ema15-365-
+            three-candle-v2-
+      - name: Validate research module
+        run: python -m py_compile india_trader/ema9_ema15_robustness_v2.py
+      - name: Run 365-day NIFTY and SENSEX multi-scenario research
+        run: |
+          test -n "$UPSTOX_ACCESS_TOKEN"
+          python -m india_trader.ema9_ema15_robustness_v2 --days 365 --out trader/backtests/ema9_ema15_robustness_v2_365.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ema9-ema15-v2-365-multi-scenario
+          path: trader/backtests/ema9_ema15_robustness_v2_365.json
+          if-no-files-found: error
