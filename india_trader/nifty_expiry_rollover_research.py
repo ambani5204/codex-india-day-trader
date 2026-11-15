@@ -25,16 +25,16 @@ def strong(bar, previous, min_body_ratio=.65, min_range_multiple=1.3):
     sample=[b.high-b.low for b in previous[-6:] if b.high>b.low]
     return bool(sample) and width>=min_range_multiple*(sum(sample)/len(sample))
 
-def candidates(bars):
+def candidates(bars, preceding=3, min_body_ratio=.65, min_range_multiple=1.3):
     """Signal only at close of complete 5m bar; 3 preceding opposing candles."""
     out=[]
-    for i in range(3,len(bars)):
+    for i in range(preceding,len(bars)):
         b=bars[i]
         close=b.time+dt.timedelta(minutes=5)
         if not WINDOW_START<=close.time()<=WINDOW_END:continue
         direction=candle_side(b)
-        if not direction or any(candle_side(x)!=-direction for x in bars[i-3:i]):continue
-        if not strong(b,bars[max(0,i-6):i]):continue
+        if not direction or any(candle_side(x)!=-direction for x in bars[i-preceding:i]):continue
+        if not strong(b,bars[max(0,i-6):i],min_body_ratio,min_range_multiple):continue
         # Strong close near extreme; confirmation against previous candle.
         if direction==1 and not (b.close>bars[i-1].high and
                 (b.high-b.close)/(b.high-b.low)<=.2):continue
@@ -45,7 +45,7 @@ def candidates(bars):
                     "signal_high":b.high,"signal_low":b.low})
     return out
 
-def replay(bars,day,slippage=1.,rr=1.5):
+def replay(bars,day,slippage=1.,rr=1.5,preceding=3,min_body_ratio=.65,min_range_multiple=1.3):
     """One active index-point proxy; allow reversal on later opposite signal."""
     bars=sorted((b for b in bars if b.time.date()==day),key=lambda b:b.time)
     clock={b.time:b for b in bars}
@@ -53,7 +53,7 @@ def replay(bars,day,slippage=1.,rr=1.5):
               for i in range(14)]  # 14:10 through 15:15 inclusive
     if any(t not in clock for t in required):
         return {"status":"INCOMPLETE_CANDLES","trades":[],"signals":0}
-    signals={x["bar_index"]:x for x in candidates(bars)}
+    signals={x["bar_index"]:x for x in candidates(bars,preceding,min_body_ratio,min_range_multiple)}
     pos=None;trades=[];pending=None
     for i,b in enumerate(bars):
         if b.time.time()<dt.time(14,30):continue
