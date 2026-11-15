@@ -1,0 +1,34 @@
+name: One-time 365-day 3 Candle Top Down research
+on:
+  push:
+    paths:
+      - .github/workflows/three-candle-top-down-once.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: three-candle-365-${{ github.run_id }}
+          restore-keys: |
+            three-candle-365-
+      - name: Backtest NIFTY and SENSEX 365 calendar days
+        run: |
+          test -n "$UPSTOX_ACCESS_TOKEN"
+          python -m india_trader.three_candle_top_down_research --days 365 --out trader/backtests/three_candle_top_down_365.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: three-candle-top-down-365
+          path: trader/backtests/three_candle_top_down_365.json
