@@ -115,7 +115,7 @@ def main() -> int:
                  "--market", market, "--poll-seconds", "30",
                  "--cooldown-minutes", "15"],
                 cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=21300)
+                timeout=max(1, int((dt.datetime.combine(now.date(), dt.time(15, 30), tzinfo=IST) - dt.datetime.now(IST)).total_seconds())))
             code = worker.returncode
     result = summarize(day, market or "NONE", code, startup)
     REPORT.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
