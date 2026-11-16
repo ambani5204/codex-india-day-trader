@@ -52,23 +52,11 @@ def main():
     data = snapshot(market, "ARCHIVED_SESSION", "private-journal-backfill", day=day)
     if not (data["closed_trades"] or data["signals_count"] or data["entry_event_count"]):
         raise RuntimeError("Archive contains no trade or signal events; refusing empty snapshot")
-    # Avoid overwriting an active, newer dashboard.
-    from google.auth.transport.requests import AuthorizedSession
-    import google.auth
-    credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/datastore"])
-    session = AuthorizedSession(credentials)
-    url = "https://firestore.googleapis.com/v1/projects/" + os.environ["FIREBASE_PROJECT_ID"] + "/databases/(default)/documents/paper_dashboard/latest"
-    response = session.get(url, timeout=25)
-    if response.status_code not in (200, 404):
-        raise RuntimeError("Unable to inspect existing dashboard: HTTP " + str(response.status_code))
-    if response.status_code == 200:
-        existing_day = response.json().get("fields", {}).get("date_ist", {}).get("stringValue", "")
-        status = response.json().get("fields", {}).get("session_status", {}).get("stringValue", "")
-        if existing_day > day or (existing_day == day and status not in ("ARCHIVED_SESSION", "FINISHED", "FAILED")):
-            print("Existing live or newer dashboard preserved")
-            return
-    publish(data)
-    print("VERIFIED ARCHIVE PUBLISHED: date=" + day + " market=" + market +
+    # Recovery writes historical date/market only. Never modify today's live
+    # dashboard or block recovery because a newer session is active.
+    from deploy.firebase_live_publisher import publish_history
+    publish_history(data)
+    print("VERIFIED ARCHIVE HISTORY PUBLISHED: date=" + day + " market=" + market +
           " closed_trades=" + str(data["closed_trades"]) + " signals=" + str(data["signals_count"]), flush=True)
 
 if __name__ == "__main__":
