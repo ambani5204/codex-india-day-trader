@@ -26,17 +26,31 @@ jobs:
           npx --yes dukascopy-node -i eurusd -from 2024-01-01 -to 2025-01-01 -t m1 -f csv -v
           find . -maxdepth 3 -name '*.csv' | head -20
           python - <<'PY'
-          import csv,glob,pathlib
+          import csv,glob,pathlib,datetime as dt,collections
           paths=glob.glob("download/**/*.csv",recursive=True)
           if not paths:raise SystemExit("DATA_UNAVAILABLE: inspect download output and fix format")
           dest=pathlib.Path("forex_data/eurusd-2024.csv")
-          count=0
+          count=0; invalid=0; years=collections.Counter(); samples=[]
           with dest.open("w",newline="") as f:
               w=csv.writer(f);w.writerow(["timestamp","open","high","low","close"])
               for name in paths:
                   for row in csv.DictReader(open(name,newline="")):
-                      w.writerow([row[k] for k in ("timestamp","open","high","low","close")]);count+=1
-          print("candles",count)
+                      raw=row["timestamp"]
+                      if len(samples)<3:samples.append(raw)
+                      try:
+                          if raw.strip().replace(".","",1).isdigit():
+                              value=float(raw);value=value/1000 if value>1e11 else value
+                              stamp=dt.datetime.fromtimestamp(value,dt.timezone.utc)
+                          else:
+                              stamp=dt.datetime.fromisoformat(raw.replace("Z","+00:00"))
+                              if stamp.tzinfo is None:stamp=stamp.replace(tzinfo=dt.timezone.utc)
+                          years[stamp.year]+=1
+                          w.writerow([stamp.isoformat(),row["open"],row["high"],row["low"],row["close"]]);count+=1
+                      except (ValueError,OverflowError,KeyError):
+                          invalid+=1
+          print("raw timestamp samples",samples)
+          print("normalized candles",count,"invalid",invalid,"year distribution",dict(years))
+          if years[2024]<10000:raise SystemExit("DATA_UNAVAILABLE: source contains fewer than 10000 2024 candles after timestamp normalization")
           PY
       - name: Run yearly analysis
         run: python forex_research/forex_yearly.py --csv forex_data/eurusd-2024.csv --pair eurusd --year 2024 --out forex_results/eurusd-2024.json
