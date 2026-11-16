@@ -33,11 +33,12 @@ def main():
         if int(run["id"]) == run_id:
             continue
         created = dt.datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")).astimezone(IST)
-        if created.date() != now.date() or not dt.time(9, 15) <= created.time() < dt.time(15, 10):
+        if created.date() != now.date() or not dt.time(8, 45) <= created.time() < dt.time(15, 10):
             continue
-        # Exclude runs created later; earlier run owns this trading day,
-        # including failed runs, to prevent fabricated double sessions.
-        if created < now and int(run["id"]) < run_id:
+        # Pre-market launches must also block later retry launches.
+        # Only retry a failed/cancelled session; an active or completed
+        # session owns the market day and must not be duplicated.
+        if int(run["id"]) < run_id and (run.get("status") != "completed" or run.get("conclusion") == "success"):
             competing.append(run["id"])
     should_run = not competing
     output = os.environ.get("GITHUB_OUTPUT")
