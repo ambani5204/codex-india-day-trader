@@ -24,6 +24,22 @@ class NightlyEvaluationTest(unittest.TestCase):
         self.assertEqual(r["markets"]["SENSEX"]["net_pnl"], 500.0)
         self.assertEqual(unpack(firestore_field(r["markets"])), r["markets"])
 
+    def test_date_scoped_report_excludes_other_days(self):
+        rows = [
+            {"data_type": "PAPER_SIMULATION", "date_ist": "2026-11-16",
+             "market": "NIFTY", "closed_trades": 1, "pnl_coverage": 1,
+             "net_pnl": -867.82, "signals_count": 7},
+            {"data_type": "PAPER_SIMULATION", "date_ist": "2026-11-13",
+             "market": "NIFTY", "closed_trades": 1, "pnl_coverage": 1,
+             "net_pnl": -1140.12, "signals_count": 4},
+        ]
+        report = evaluate(rows, trading_date="2026-11-16")
+        self.assertEqual(report["report_date"], "2026-11-16")
+        self.assertEqual(report["sessions"], 1)
+        self.assertEqual(report["closed_trades"], 1)
+        self.assertEqual(report["signals"], 7)
+        self.assertEqual(report["net_pnl"], -867.82)
+
     def test_no_data(self):
         r = evaluate([])
         self.assertEqual(r["status"], "INSUFFICIENT_DATA")
