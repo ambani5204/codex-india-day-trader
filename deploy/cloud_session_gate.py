@@ -23,7 +23,7 @@ def main():
         output = os.environ.get("GITHUB_OUTPUT")
         if output:
             with open(output, "a", encoding="utf-8") as handle:
-                handle.write("should_run=false\\n")
+                handle.write("should_run=false\n")
         print(f"Skipping outside market startup window: {now.isoformat()}")
         return
     url = f"https://api.github.com/repos/{repo}/actions/runs?per_page=100"
