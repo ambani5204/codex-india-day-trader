@@ -48,16 +48,22 @@ def main():
         markets.add(market)
     if not markets:
         raise RuntimeError("No verified NIFTY/SENSEX journals")
-    market = sorted(markets)[0]
-    data = snapshot(market, "ARCHIVED_SESSION", "private-journal-backfill", day=day)
-    if not (data["closed_trades"] or data["signals_count"] or data["entry_event_count"]):
-        raise RuntimeError("Archive contains no trade or signal events; refusing empty snapshot")
-    # Recovery writes historical date/market only. Never modify today's live
-    # dashboard or block recovery because a newer session is active.
+    # Restore every market present in the archived date, independently.
+    # Never silently skip SENSEX when NIFTY is also available.
     from deploy.firebase_live_publisher import publish_history
-    publish_history(data)
-    print("VERIFIED ARCHIVE HISTORY PUBLISHED: date=" + day + " market=" + market +
-          " closed_trades=" + str(data["closed_trades"]) + " signals=" + str(data["signals_count"]), flush=True)
+    restored = 0
+    for market in sorted(markets):
+        data = snapshot(market, "ARCHIVED_SESSION", "private-journal-backfill", day=day)
+        if not (data["closed_trades"] or data["signals_count"] or data["entry_event_count"]):
+            raise RuntimeError("Archive contains no trade or signal events for " + market +
+                               "; refusing empty snapshot")
+        # Recovery writes historical date/market only, not today's live dashboard.
+        publish_history(data)
+        restored += 1
+        print("VERIFIED ARCHIVE HISTORY PUBLISHED: date=" + day + " market=" + market +
+              " closed_trades=" + str(data["closed_trades"]) +
+              " signals=" + str(data["signals_count"]), flush=True)
+    print("ARCHIVE_MARKETS_RESTORED=" + str(restored), flush=True)
 
 if __name__ == "__main__":
     main()
