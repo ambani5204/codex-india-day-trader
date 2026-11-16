@@ -2,6 +2,9 @@ name: Cloud CE-PE live paper trading (NO REAL ORDERS)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/cloud-ce-pe-paper.yml"
   schedule:
     # Start at 09:00 IST with delayed-start retries; session gate prevents duplicates.
     - cron: "30,45 3 * * 1-5"
