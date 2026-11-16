@@ -154,29 +154,29 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
     }
 
 
-def publish(data: dict) -> None:
-    import google.auth
-    from google.auth.transport.requests import AuthorizedSession
-    credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/datastore"])
-    session = AuthorizedSession(credentials)
+def _firestore_field(value):
+    if value is None:
+        return {"nullValue": None}
+    if isinstance(value, bool):
+        return {"booleanValue": value}
+    if isinstance(value, float):
+        return {"doubleValue": value}
+    if isinstance(value, int):
+        return {"integerValue": str(value)}
+    if isinstance(value, list):
+        return {"arrayValue": {"values": [_firestore_field(item) for item in value]}}
+    if isinstance(value, dict):
+        return {"mapValue": {"fields": {k: _firestore_field(v) for k, v in value.items()}}}
+    return {"stringValue": str(value)}
+
+
+def publish_history(data: dict, session=None) -> None:
+    if session is None:
+        import google.auth
+        from google.auth.transport.requests import AuthorizedSession
+        credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/datastore"])
+        session = AuthorizedSession(credentials)
     project = os.environ["FIREBASE_PROJECT_ID"]
-    url = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/paper_dashboard/latest"
-    def field(value):
-        if value is None:
-            return {"nullValue": None}
-        if isinstance(value, float):
-            return {"doubleValue": value}
-        if isinstance(value, bool):
-            return {"booleanValue": value}
-        if isinstance(value, int):
-            return {"integerValue": str(value)}
-        if isinstance(value, list):
-            return {"arrayValue": {"values": [field(item) for item in value]}}
-        if isinstance(value, dict):
-            return {"mapValue": {"fields": {k: field(v) for k, v in value.items()}}}
-        return {"stringValue": str(value)}
-    response = session.patch(url, json={"fields": {k: field(v) for k, v in data.items()}}, timeout=25)
-    response.raise_for_status()
     history_url = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/paper_history/{data['date_ist']}_{data['market']}"
     history = {k: v for k, v in data.items() if k != "events"}
     # Persist trade_ledger and its entry_strategy for historical per-strategy views.
@@ -205,8 +205,21 @@ def publish(data: dict) -> None:
             history["last_attempt_status"] = data.get("session_status")
             history["last_attempt_at"] = data.get("updated_at")
             history["last_attempt_run_id"] = data.get("run_id")
-    result = session.patch(history_url, json={"fields": {k: field(v) for k, v in history.items()}}, timeout=25)
+    result = session.patch(history_url, json={"fields": {k: _firestore_field(v) for k, v in history.items()}}, timeout=25)
     result.raise_for_status()
+
+
+def publish(data: dict) -> None:
+    import google.auth
+    from google.auth.transport.requests import AuthorizedSession
+    credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/datastore"])
+    session = AuthorizedSession(credentials)
+    project = os.environ["FIREBASE_PROJECT_ID"]
+    # Durable historical record first; latest is only a disposable read model.
+    publish_history(data, session=session)
+    url = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/paper_dashboard/latest"
+    response = session.patch(url, json={"fields": {k: _firestore_field(v) for k, v in data.items()}}, timeout=25)
+    response.raise_for_status()
 
 
 def loop(market: str, state_file: str, stop_file: str) -> None:
