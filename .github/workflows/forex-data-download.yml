@@ -1,0 +1,57 @@
+name: Forex Historical Data Download (Public)
+on:
+  workflow_dispatch:
+    inputs:
+      pair:
+        description: Currency pair
+        required: true
+        type: choice
+        options: [eurusd, gbpusd, usdjpy]
+      year:
+        description: Historical calendar year (download in yearly chunks)
+        required: true
+        type: choice
+        options: ['2023', '2024', '2025', '2026']
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download public one-minute bid candles
+        env:
+          PAIR: ${{ inputs.pair }}
+          YEAR: ${{ inputs.year }}
+        run: |
+          set -euo pipefail
+          mkdir -p forex_data
+          npx --yes dukascopy-node -i "$PAIR" -from "$YEAR-01-01" -to "$((YEAR+1))-01-01" -t m1 -f csv -v
+          find download -type f -name '*.csv' -print
+          python - <<'PY'
+          import csv,glob,os,pathlib
+          files=glob.glob("download/**/*.csv",recursive=True)
+          if not files:raise SystemExit("DATA_UNAVAILABLE: no CSV downloaded")
+          dest=pathlib.Path("forex_data")/(os.environ["PAIR"]+"-"+os.environ["YEAR"]+"-m1-bid.csv")
+          count=0
+          with dest.open("w",newline="") as f:
+              w=csv.writer(f);w.writerow(["timestamp","open","high","low","close"])
+              for name in files:
+                  with open(name,newline="") as src:
+                      for row in csv.DictReader(src):
+                          try:
+                              w.writerow([row[k] for k in ("timestamp","open","high","low","close")]);count+=1
+                          except KeyError as exc:raise SystemExit("Unexpected source schema: "+str(exc))
+          if count<10000:raise SystemExit("DATA_UNAVAILABLE: insufficient candles")
+          print(f"Saved {count} one-minute candles to {dest}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: forex-data-${{ inputs.pair }}-${{ inputs.year }}
+          path: forex_data/*.csv
+          retention-days: 30
+          compression-level: 6
