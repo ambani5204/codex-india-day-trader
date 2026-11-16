@@ -32,6 +32,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m deploy.cloud_session_gate
+      - name: Report duplicate or inactive paper session explicitly
+        if: steps.gate.outputs.should_run != 'true'
+        run: |
+          echo "::notice::SKIPPED: this run did not start a paper-trading session."
+          echo "## Paper session NOT started" >> "$GITHUB_STEP_SUMMARY"
+          echo "The session gate skipped this run. No trades or Firestore publication occurred in this run." >> "$GITHUB_STEP_SUMMARY"
       - name: Offline safety and unit tests
         if: steps.gate.outputs.should_run == 'true'
         run: python -m unittest discover -s tests -q
@@ -131,6 +137,18 @@ jobs:
           path: trader/cloud_paper_summary.json
           if-no-files-found: warn
           retention-days: 30
+      - name: Report actual paper-session outcome
+        if: always()
+        run: |
+          echo "## Cloud paper session execution" >> "$GITHUB_STEP_SUMMARY"
+          echo "Gate: ${{ steps.gate.outputs.should_run }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Session step: ${{ steps.session.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Private journal upload: ${{ steps.private_upload.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.gate.outputs.should_run }}" = "true" ] && [ "${{ steps.session.outcome }}" = "success" ] && [ "${{ steps.private_upload.outcome }}" = "success" ]; then
+            echo "Verified workflow steps completed; inspect Firebase for actual trades." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "NO VERIFIED COMPLETE SESSION IN THIS RUN." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Fail visibly when session failed or was incomplete
         if: steps.gate.outputs.should_run == 'true' && (steps.session.outcome != 'success' || steps.private_upload.outcome != 'success')
         run: |
