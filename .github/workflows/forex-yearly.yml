@@ -1,0 +1,64 @@
+name: Forex Yearly Research (Isolated)
+on:
+  workflow_dispatch:
+    inputs:
+      pair:
+        required: true
+        type: choice
+        options: [eurusd, gbpusd, usdjpy]
+      year:
+        required: true
+        type: choice
+        options: ['2023', '2024', '2025', '2026']
+permissions:
+  contents: read
+jobs:
+  yearly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download selected year of Dukascopy data
+        env:
+          PAIR: ${{ inputs.pair }}
+          YEAR: ${{ inputs.year }}
+        run: |
+          set -euo pipefail
+          mkdir -p forex_data
+          npx --yes dukascopy-node -i "$PAIR" -from "$YEAR-01-01" -to "$((YEAR+1))-01-01" -t m1 -f csv -v
+          python - <<'PY'
+          import csv,glob,os,pathlib
+          files=glob.glob("download/**/*.csv",recursive=True)
+          if not files:raise SystemExit("DATA_UNAVAILABLE: downloader produced no CSV at expected location; inspect download format")
+          dest=pathlib.Path("forex_data")/(os.environ["PAIR"]+"-"+os.environ["YEAR"]+".csv")
+          count=0
+          with dest.open("w",newline="") as f:
+              w=csv.writer(f);w.writerow(["timestamp","open","high","low","close"])
+              for name in files:
+                  with open(name,newline="") as src:
+                      for row in csv.DictReader(src):
+                          try:w.writerow([row[k] for k in ("timestamp","open","high","low","close")]);count+=1
+                          except KeyError as exc:raise SystemExit("SOURCE_SCHEMA_MISMATCH: "+str(exc))
+          if count<10000:raise SystemExit("DATA_UNAVAILABLE: insufficient one-minute candles")
+          print("candles",count)
+          PY
+      - name: Analyze selected year only
+        env:
+          PAIR: ${{ inputs.pair }}
+          YEAR: ${{ inputs.year }}
+        run: |
+          python forex_research/forex_yearly.py --csv "forex_data/$PAIR-$YEAR.csv" --pair "$PAIR" --year "$YEAR" --out "forex_results/$PAIR-$YEAR.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: forex-yearly-${{ inputs.pair }}-${{ inputs.year }}
+          path: |
+            forex_results/*.json
+          if-no-files-found: warn
+          retention-days: 30
