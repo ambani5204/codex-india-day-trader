@@ -181,6 +181,30 @@ def publish(data: dict) -> None:
     history = {k: v for k, v in data.items() if k != "events"}
     # Persist trade_ledger and its entry_strategy for historical per-strategy views.
     # Keep the ledger bounded in snapshot() to respect Firestore document limits.
+    # Preserve the best verified journal across failed/restarted attempts.
+    existing_response = session.get(history_url, timeout=25)
+    if existing_response.status_code not in (200, 404):
+        existing_response.raise_for_status()
+    if existing_response.status_code == 200:
+        def unpack(value):
+            if "arrayValue" in value:
+                return [unpack(v) for v in value["arrayValue"].get("values", [])]
+            if "mapValue" in value:
+                return {k: unpack(v) for k, v in value["mapValue"].get("fields", {}).items()}
+            for kind in ("integerValue", "doubleValue", "stringValue", "booleanValue"):
+                if kind in value:
+                    return int(value[kind]) if kind == "integerValue" else value[kind]
+            return None
+        previous = {k: unpack(v) for k, v in existing_response.json().get("fields", {}).items()}
+        old_ledger = previous.get("trade_ledger") or []
+        new_ledger = history.get("trade_ledger") or []
+        old_closed = int(previous.get("closed_trades") or 0)
+        new_closed = int(history.get("closed_trades") or 0)
+        if (len(old_ledger), old_closed) > (len(new_ledger), new_closed):
+            history = dict(previous)
+            history["last_attempt_status"] = data.get("session_status")
+            history["last_attempt_at"] = data.get("updated_at")
+            history["last_attempt_run_id"] = data.get("run_id")
     result = session.patch(history_url, json={"fields": {k: field(v) for k, v in history.items()}}, timeout=25)
     result.raise_for_status()
 
