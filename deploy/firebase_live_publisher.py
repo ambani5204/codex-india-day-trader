@@ -150,6 +150,7 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
         "rejected_count": len(rejected),
         "errors_count": len(errors),
         "events": recent,
+        "rejection_events": [dict(time=str(e.get("timestamp") or e.get("time") or "")[:35], type=str(e.get("event") or ""), reason=str(e.get("reason") or e.get("message") or "")[:300], strategy=str(e.get("strategy") or ""), symbol=str(e.get("symbol") or "")) for e in rejected][-200:],
         "data_type": "PAPER_SIMULATION",
     }
 
@@ -178,7 +179,7 @@ def publish_history(data: dict, session=None) -> None:
         session = AuthorizedSession(credentials)
     project = os.environ["FIREBASE_PROJECT_ID"]
     history_url = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/paper_history/{data['date_ist']}_{data['market']}"
-    history = {k: v for k, v in data.items() if k != "events"}
+    history = dict(data)  # Preserve diagnostic events in dated history.
     # Persist trade_ledger and its entry_strategy for historical per-strategy views.
     # Keep the ledger bounded in snapshot() to respect Firestore document limits.
     # Preserve the best verified journal across failed/restarted attempts.
