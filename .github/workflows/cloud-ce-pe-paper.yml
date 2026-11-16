@@ -18,7 +18,7 @@ concurrency:
 jobs:
   paper:
     runs-on: ubuntu-latest
-    timeout-minutes: 359
+    timeout-minutes: 405
     env:
       UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
       PYTHONUNBUFFERED: "1"
@@ -113,6 +113,11 @@ jobs:
           kill "$THREE_PUBLISHER_PID" "$EMA_PUBLISHER_PID" 2>/dev/null || true
           wait "$THREE_PUBLISHER_PID" 2>/dev/null || true
           wait "$EMA_PUBLISHER_PID" 2>/dev/null || true
+          if [ "$THREE_STATUS" -ne 0 ] || [ "$EMA_STATUS" -ne 0 ] || [ "$result" -ne 0 ]; then
+            echo FAILED > "$PAPER_STATE_FILE"
+          else
+            echo FINISHED > "$PAPER_STATE_FILE"
+          fi
           cleanup
           trap - EXIT
           if [ "$THREE_STATUS" -ne 0 ] || [ "$EMA_STATUS" -ne 0 ]; then
