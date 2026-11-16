@@ -5,10 +5,11 @@ from collections import defaultdict
 from india_trader.core import IST
 
 
-def evaluate(rows, now=None):
+def evaluate(rows, now=None, trading_date=None):
     now = now or dt.datetime.now(IST)
     valid = [r for r in rows if r.get("data_type") == "PAPER_SIMULATION"
-             and r.get("date_ist") and r.get("market") in ("NIFTY", "SENSEX")]
+             and r.get("date_ist") and r.get("market") in ("NIFTY", "SENSEX")
+             and (trading_date is None or r["date_ist"] == trading_date)]
     # Legacy date-only documents and newer date_market documents can coexist.
     # Retain the latest snapshot for each actual market session.
     unique = {}
@@ -56,7 +57,7 @@ def evaluate(rows, now=None):
             "review_flag": "INSUFFICIENT_SAMPLE" if v["verified_trades"] < 30
                 else "STOP_MODEL_REVIEW" if v["stop_exceedances"] else "MONITOR"}
     return {
-        "report_date": now.date().isoformat(),
+        "report_date": trading_date or now.date().isoformat(),
         "generated_at": now.isoformat(),
         "status": "INSUFFICIENT_DATA" if trades == 0 or covered != trades else "EVALUATED",
         "sessions": len(valid),
@@ -126,21 +127,44 @@ def main():
         token = payload.get("nextPageToken", "")
         if not token:
             break
-    report = evaluate(rows)
+    # Generate immutable date-scoped reports for every archived trading date.
+    # This also repairs missed nightly runs without overwriting other dates.
+    dates = sorted({str(r.get("date_ist")) for r in rows
+                    if r.get("data_type") == "PAPER_SIMULATION"
+                    and r.get("market") in ("NIFTY", "SENSEX")
+                    and r.get("date_ist")})
+    requested = os.environ.get("PAPER_EVALUATION_DATE")
+    if requested:
+        dt.date.fromisoformat(requested)
+        dates = [requested]
+    if not dates:
+        raise RuntimeError("No archived trading sessions found; cannot publish an empty nightly report")
+    reports = []
+    for trading_date in dates:
+        report = evaluate(rows, trading_date=trading_date)
+        if report["sessions"] == 0:
+            raise RuntimeError("No archived sessions for requested date " + trading_date)
+        response = session.patch(base + "paper_evaluations/" + trading_date,
+            json={"fields": {k: firestore_field(v) for k, v in report.items()}}, timeout=25)
+        response.raise_for_status()
+        reports.append(report)
+        print("DAILY_EVALUATION_PUBLISHED date=" + trading_date +
+              " status=" + report["status"] + " sessions=" + str(report["sessions"]) +
+              " verified_trades=" + str(report["verified_pnl_trades"]), flush=True)
+    # The latest read model always represents the most recent trading session,
+    # never the calendar date on which a delayed workflow happened to execute.
+    report = reports[-1]
+    if not requested:
+        response = session.patch(base + "paper_evaluations/latest",
+            json={"fields": {k: firestore_field(v) for k, v in report.items()}}, timeout=25)
+        response.raise_for_status()
     output = os.environ.get("PAPER_EVALUATION_REPORT_PATH")
     if output:
         import json
         from pathlib import Path
         destination = Path(output)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    for doc in ("latest", report["report_date"]):
-        response = session.patch(base + "paper_evaluations/" + doc,
-            json={"fields": {k: firestore_field(v) for k, v in report.items()}}, timeout=25)
-        response.raise_for_status()
-    print("NIGHTLY_EVALUATION_PUBLISHED date=" + report["report_date"] +
-          " status=" + report["status"] + " sessions=" + str(report["sessions"]) +
-          " verified_trades=" + str(report["verified_pnl_trades"]), flush=True)
+        destination.write_text(json.dumps(report, indent=2) + "\\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
