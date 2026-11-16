@@ -3,10 +3,9 @@ name: Cloud CE-PE live paper trading (NO REAL ORDERS)
 on:
   workflow_dispatch:
   schedule:
-    # Retry opportunities: 09:25, 09:45, 10:05, 10:25, 10:45 IST.
-    - cron: "55 3 * * 1-5"
-    - cron: "15,35,55 4 * * 1-5"
-    - cron: "15 5 * * 1-5"
+    # Start at 09:00 IST with delayed-start retries; session gate prevents duplicates.
+    - cron: "30,45 3 * * 1-5"
+    - cron: "0,15,30 4 * * 1-5"
 
 permissions:
   contents: read
@@ -79,6 +78,14 @@ jobs:
           python tools/india.py upstox-sync || echo "::warning::EMA9 instrument refresh failed"
           python -m india_trader.ema9_v2_live_sidecar &
           EMA9_PID=$!
+          python -m deploy.three_candle_live_publisher &
+          THREE_PUBLISHER_PID=$!
+          python -m deploy.ema9_ema15_live_publisher &
+          EMA_PUBLISHER_PID=$!
+          python -m india_trader.three_candle_live_sidecar &
+          THREE_PID=$!
+          python -m india_trader.ema9_ema15_live_sidecar &
+          EMA_PID=$!
           set +e
           python -m deploy.cloud_paper_session
           result=$?
@@ -91,8 +98,21 @@ jobs:
           if [ -f "trader/ema9_v2_live/$(TZ=Asia/Kolkata date +%F).jsonl" ]; then
             python -m deploy.publish_ema9_v2_paper || EMA9_STATUS=$?
           fi
+          THREE_STATUS=0
+          EMA_STATUS=0
+          wait "$THREE_PID" || THREE_STATUS=$?
+          wait "$EMA_PID" || EMA_STATUS=$?
+          python -m deploy.publish_three_candle_paper || THREE_STATUS=$?
+          python -m deploy.publish_ema9_ema15_paper || EMA_STATUS=$?
+          kill "$THREE_PUBLISHER_PID" "$EMA_PUBLISHER_PID" 2>/dev/null || true
+          wait "$THREE_PUBLISHER_PID" 2>/dev/null || true
+          wait "$EMA_PUBLISHER_PID" 2>/dev/null || true
           cleanup
           trap - EXIT
+          if [ "$THREE_STATUS" -ne 0 ] || [ "$EMA_STATUS" -ne 0 ]; then
+            echo "::error::Strategy paper sidecar failed: 3 Candle=$THREE_STATUS EMA9/15=$EMA_STATUS"
+            exit 1
+          fi
           if [ "$EMA9_STATUS" -ne 0 ]; then echo "::warning::EMA9 V2 sidecar failed ($EMA9_STATUS)"; fi
           if [ "$PUBLISHER_STATUS" -ne 0 ]; then exit "$PUBLISHER_STATUS"; fi
           exit "$result"
