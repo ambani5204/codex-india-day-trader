@@ -24,7 +24,7 @@ def thirty_minute_signal(bars, now, last_bar=None):
     if not 0<=(now-end).total_seconds()<=90:
         return None
     opening=[b for b in closed if dt.time(9,15)<=b.time.time()<dt.time(9,45)]
-    expected=[dt.time(9,15+i*5//60,(15+i*5)%60) for i in range(6)]
+    expected=[dt.time(9,(15+i*5)//60,(15+i*5)%60) for i in range(6)]
     if len(opening)!=6 or [b.time.time() for b in opening]!=expected:
         return None
     high=max(b.high for b in opening)
