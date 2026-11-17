@@ -51,6 +51,11 @@ jobs:
         env:
           JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
         run: python -m deploy.private_journal_sync --verify-only
+      - name: Restore previous same-day private journals before starting workers
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: python -m deploy.private_journal_restore
       - name: Run live option-quote CE/PE paper session (read only)
         if: steps.gate.outputs.should_run == 'true'
         id: session
