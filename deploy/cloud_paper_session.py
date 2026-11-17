@@ -97,27 +97,43 @@ def main() -> int:
     os.chmod(config_path, 0o600)
     startup = "READY"
     code = 1
+    failure_detail = None
     if not market or now.weekday() >= 5:
         startup = "NON_TRADING_WEEKDAY"
-    elif not (dt.time(9, 15) <= now.time() < dt.time(15, 10)):
+    elif not (dt.time(9, 0) <= now.time() < dt.time(15, 10)):
         startup = "START_OUTSIDE_ALLOWED_WINDOW"
     elif not os.environ.get("UPSTOX_ACCESS_TOKEN"):
         startup = "MISSING_UPSTOX_TOKEN"
     else:
-        sync = subprocess.run([sys.executable, "tools/india.py", "upstox-sync"],
-                              cwd=ROOT, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL, timeout=100)
-        if sync.returncode:
-            startup = "INSTRUMENT_SYNC_FAILED"
-        else:
-            worker = subprocess.run(
-                [sys.executable, "tools/india.py", "paper-advanced",
-                 "--market", market, "--poll-seconds", "30",
-                 "--cooldown-minutes", "15"],
-                cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=max(1, int((dt.datetime.combine(now.date(), dt.time(15, 30), tzinfo=IST) - dt.datetime.now(IST)).total_seconds())))
-            code = worker.returncode
+        try:
+            sync = subprocess.run([sys.executable, "tools/india.py", "upstox-sync"],
+                                  cwd=ROOT, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL, timeout=100)
+            if sync.returncode:
+                startup = "INSTRUMENT_SYNC_FAILED"
+                failure_detail = "Instrument sync returned exit code " + str(sync.returncode)
+            else:
+                try:
+                    worker = subprocess.run(
+                        [sys.executable, "tools/india.py", "paper-advanced",
+                         "--market", market, "--poll-seconds", "30",
+                         "--cooldown-minutes", "15"],
+                        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        timeout=max(1, int((dt.datetime.combine(now.date(), dt.time(15, 30), tzinfo=IST) - dt.datetime.now(IST)).total_seconds())))
+                    code = worker.returncode
+                    if code:
+                        failure_detail = "Paper worker exited with code " + str(code)
+                except subprocess.TimeoutExpired:
+                    startup = "WORKER_TIMEOUT"
+                    failure_detail = "Paper worker exceeded its market-session timeout; journals retained for recovery"
+        except subprocess.TimeoutExpired:
+            startup = "INSTRUMENT_SYNC_TIMEOUT"
+            failure_detail = "Instrument sync exceeded 100 seconds"
+        except OSError as exc:
+            startup = "PROCESS_START_FAILED"
+            failure_detail = type(exc).__name__ + ": " + str(exc)[:150]
     result = summarize(day, market or "NONE", code, startup)
+    result["failure_detail"] = failure_detail or (startup if startup != "READY" else None)
     REPORT.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))
     return 0 if result["status"] == "COMPLETE" else 1
