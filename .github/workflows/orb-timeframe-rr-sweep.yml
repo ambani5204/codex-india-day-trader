@@ -1,0 +1,44 @@
+name: Research only - ORB timeframe and RR sweep
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "india_trader/orb_timeframe_rr_grid.py"
+      - ".github/workflows/orb-timeframe-rr-sweep.yml"
+permissions:
+  contents: read
+concurrency:
+  group: orb-timeframe-rr-sweep
+  cancel-in-progress: false
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore cached Upstox index candles
+        uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: orb-rr-index-${{ github.run_id }}
+          restore-keys: |
+            orb-rr-index-
+            orb-30m-index-
+            frozen-index-forward-v1-
+      - name: Compare timeframes, breakout buffers, RR, and trade limits
+        env:
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$UPSTOX_ACCESS_TOKEN" || { echo "::error::Missing UPSTOX_ACCESS_TOKEN"; exit 1; }
+          python -m india_trader.orb_timeframe_rr_grid --start 2025-11-16 --end 2026-11-16 --out trader/backtests/orb_timeframe_rr_grid.json
+      - name: Upload full research report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orb-timeframe-rr-full-grid
+          path: trader/backtests/orb_timeframe_rr_grid.json
+          if-no-files-found: warn
