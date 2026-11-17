@@ -1,0 +1,43 @@
+name: Research only - ORB 15m versus 30m NIFTY SENSEX
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "india_trader/orb_range_comparison.py"
+      - ".github/workflows/orb-30m-comparison.yml"
+permissions:
+  contents: read
+concurrency:
+  group: orb-30m-research
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore historical index cache
+        uses: actions/cache@v4
+        with:
+          path: trader/backtest_cache
+          key: orb-30m-index-${{ github.run_id }}
+          restore-keys: |
+            orb-30m-index-
+            frozen-index-forward-v1-
+      - name: Run independent historical ORB comparisons
+        env:
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$UPSTOX_ACCESS_TOKEN" || { echo "::error::Missing UPSTOX_ACCESS_TOKEN"; exit 1; }
+          python -m india_trader.orb_range_comparison --start 2025-11-16 --end 2026-11-16 --out trader/backtests/orb_15m_vs_30m.json
+      - name: Upload research results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orb-15m-vs-30m-research
+          path: trader/backtests/orb_15m_vs_30m.json
+          if-no-files-found: warn
