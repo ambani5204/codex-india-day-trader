@@ -42,7 +42,12 @@ def restore(day=None, token=None):
             continue
         response = call("/repos/" + DEST + "/contents/journals/" + day + "/" +
                         urllib.parse.quote(name), token)
-        # GitHub Contents API wraps Base64 at line boundaries. Strip only\n        # ASCII whitespace; strict validation still rejects corrupt payloads.\n        encoded = response["content"]\n        if response.get("encoding") != "base64" or not isinstance(encoded, str):\n            raise RuntimeError("Archived journal has invalid content encoding " + name)\n        raw = base64.b64decode("".join(encoded.split()), validate=True)
+        # GitHub Contents API wraps Base64 at line boundaries. Strip only
+        # ASCII whitespace; strict validation still rejects corrupt payloads.
+        encoded = response["content"]
+        if response.get("encoding", "base64") != "base64" or not isinstance(encoded, str):
+            raise RuntimeError("Archived journal has invalid content encoding " + name)
+        raw = base64.b64decode("".join(encoded.split()), validate=True)
         if not raw.strip() or any(not isinstance(json.loads(line), dict)
                                   for line in raw.splitlines() if line.strip()):
             raise RuntimeError("Malformed archived journal " + name)
