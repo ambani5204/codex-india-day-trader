@@ -201,7 +201,18 @@ def publish_history(data: dict, session=None) -> None:
         new_ledger = history.get("trade_ledger") or []
         old_closed = int(previous.get("closed_trades") or 0)
         new_closed = int(history.get("closed_trades") or 0)
-        if (len(old_ledger), old_closed) > (len(new_ledger), new_closed):
+        # An interrupted restart must never erase previously published signals,
+        # entries, closed trades, or rejection diagnostics. Prefer the older
+        # verified snapshot if the new runner has incomplete restored history.
+        old_coverage = (int(previous.get("signals_count") or 0),
+                        int(previous.get("entry_event_count") or 0),
+                        old_closed, int(previous.get("rejected_count") or 0),
+                        len(old_ledger))
+        new_coverage = (int(history.get("signals_count") or 0),
+                        int(history.get("entry_event_count") or 0),
+                        new_closed, int(history.get("rejected_count") or 0),
+                        len(new_ledger))
+        if any(old > new for old, new in zip(old_coverage, new_coverage)):
             history = dict(previous)
             history["last_attempt_status"] = data.get("session_status")
             history["last_attempt_at"] = data.get("updated_at")
