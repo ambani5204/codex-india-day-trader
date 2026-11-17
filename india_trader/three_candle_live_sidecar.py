@@ -30,7 +30,7 @@ def run():
     if path.exists():raise RuntimeError("Existing top-down session journal; duplicate runner blocked")
     previous={};positions={};done=set()
     with path.open("x") as journal:
-        while dt.datetime.now(IST).time()<dt.time(15,15):
+        while dt.datetime.now(IST).time()<dt.time(15,30):
             now=dt.datetime.now(IST)
             for market in ("NIFTY","SENSEX"):
                 try:
