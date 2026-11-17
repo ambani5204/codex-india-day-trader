@@ -26,7 +26,7 @@ def run():
     if journal.exists():raise RuntimeError("Duplicate session journal; refusing to restart")
     positions={};pending={};last_processed={};done=set()
     with journal.open("x") as f:
-        while dt.datetime.now(IST).time()<dt.time(15,15):
+        while dt.datetime.now(IST).time()<dt.time(15,30):
             now=dt.datetime.now(IST)
             for market in ("NIFTY","SENSEX"):
                 try:
