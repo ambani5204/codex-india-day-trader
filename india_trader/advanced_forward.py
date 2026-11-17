@@ -276,7 +276,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                 try:
                     bars=api.candles(INDICES[args.market])
                     # Store this candle as evaluated regardless of signal.
-                    signal=intraday_signal(bars,now,last_bar)
+                    signal=intraday_signal(bars,now,last_bar,market=args.market)
                     filtered=[b for b in bars if b.time.date()==today and
                               b.time+dt.timedelta(minutes=5)<=now]
                     if filtered:
