@@ -58,6 +58,7 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
           FIREBASE_PROJECT_ID: stock-market-c5016
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
         run: |
           if [ -z "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" ]; then
             echo "::error::Firebase service account secret is missing; cannot publish dashboard"
@@ -71,12 +72,18 @@ jobs:
           export PAPER_STATE_FILE="$RUNNER_TEMP/paper-state"
           export PAPER_STOP_FILE="$RUNNER_TEMP/paper-stop"
           echo STARTING > "$PAPER_STATE_FILE"
+          # Durable, private-only snapshots while the worker is running.
+          # Cancellation can skip post-run steps, so archive during the session.
+          python -m deploy.private_journal_checkpoint &
+          CHECKPOINT_PID=$!
           python -m deploy.firebase_live_publisher &
           PUBLISHER_PID=$!
           PUBLISHER_STATUS=0
           cleanup() {
             touch "$PAPER_STOP_FILE"
             wait "$PUBLISHER_PID" || PUBLISHER_STATUS=$?
+            kill "$CHECKPOINT_PID" 2>/dev/null || true
+            wait "$CHECKPOINT_PID" 2>/dev/null || true
             rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
             if [ "$PUBLISHER_STATUS" -ne 0 ]; then
               echo "::error::Firestore publisher exited with code $PUBLISHER_STATUS"
