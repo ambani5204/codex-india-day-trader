@@ -43,6 +43,9 @@ jobs:
       - name: Offline safety and unit tests
         if: steps.gate.outputs.should_run == 'true'
         run: python -m unittest discover -s tests -q
+      - name: Validate ORB expiry paper-only candidate routing
+        if: steps.gate.outputs.should_run == 'true'
+        run: python -m india_trader.orb_expiry_shadow --self-test
       - name: Verify PRIVATE archive destination before trading
         if: steps.gate.outputs.should_run == 'true'
         env:

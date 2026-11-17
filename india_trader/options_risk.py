@@ -103,8 +103,12 @@ def index_stop_plan(bars,signal,spot,now,atr_multiplier=1.5):
     strategy=signal.get('strategy')
     last=completed[-1]
     if strategy=='OPENING_RANGE_BREAKOUT':
-        opening=[b for b in completed if dt.time(9,15)<=b.time.time()<dt.time(9,30)]
-        if [b.time.time() for b in opening]!=[dt.time(9,15),dt.time(9,20),dt.time(9,25)]:
+        opening_minutes=int(signal.get('opening_minutes',15))
+        opening=[b for b in completed if dt.time(9,15)<=b.time.time()<
+                 (dt.datetime.combine(now.date(),dt.time(9,15),IST)+dt.timedelta(minutes=opening_minutes)).time()]
+        expected=[(dt.datetime.combine(now.date(),dt.time(9,15),IST)+dt.timedelta(minutes=5*i)).time()
+                  for i in range(opening_minutes//5)]
+        if [b.time.time() for b in opening]!=expected:
             raise UpstoxError('Opening range incomplete; cannot plan structural stop')
         high=max(b.high for b in opening)
         low=min(b.low for b in opening)
@@ -131,10 +135,18 @@ def index_stop_plan(bars,signal,spot,now,atr_multiplier=1.5):
             else:
                 stop=low+buffer
                 basis='ORB_OPENING_LOW_RETEST'
+        if signal.get('confirmation') == 'MARKET_ORB_CLOSED_CONFIRMATION':
+            confirmation_minutes=int(signal['confirmation_minutes'])
+            confirmation=completed[-confirmation_minutes//5:]
+            if len(confirmation)!=confirmation_minutes//5:
+                raise UpstoxError('ORB confirmation candle data incomplete')
+            stop=(min(b.low for b in confirmation)-buffer if side=='BULL'
+                  else max(b.high for b in confirmation)+buffer)
+            basis='ORB_CONFIRMATION_CANDLE_EXTREME'
         atr=atr_5m(completed) if len(completed)>=15 else None
         # The original US exit skill uses a pre-committed 2R target by default.
         # It is a hypothetical projection, not an expected market move.
-        target_basis='ORB_2R_PROJECTION'
+        target_basis='ORB_3R_PROJECTION' if signal.get('target_r')==3.0 else 'ORB_2R_PROJECTION'
         target=None
     elif strategy in ('OPENING_RANGE_FAKEOUT','OPENING_RANGE_TRAP'):
         # These are opposite-direction range trades. Do NOT reuse the ORB
@@ -208,7 +220,8 @@ def index_stop_plan(bars,signal,spot,now,atr_multiplier=1.5):
     if strategy=='EMA_8_21_CROSS' and gap>2.5*atr:
         raise UpstoxError('EMA entry overextended from real swing (>2.5 ATR); skip rather than tighten stop')
     if target is None:
-        target=(spot+2*gap) if side=='BULL' else (spot-2*gap)
+        rr=float(signal.get('target_r',2.0)) if strategy=='OPENING_RANGE_BREAKOUT' else 2.0
+        target=(spot+rr*gap) if side=='BULL' else (spot-rr*gap)
     reward=target-spot if side=='BULL' else spot-target
     if not math.isfinite(reward) or reward<=0 or target<=0:
         raise UpstoxError('No valid favorable structural target for the setup')

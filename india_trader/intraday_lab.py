@@ -109,7 +109,42 @@ def _opening_range_signal(closed, end):
     return None
 
 
-def intraday_signal(bars, now, last_bar=None):
+def _market_orb_breakout(closed, end, market):
+    """Selected closed-candle ORB candidate; other strategies remain unchanged."""
+    settings = {'NIFTY': (60, 5), 'SENSEX': (45, 15)}
+    if market not in settings:
+        return None
+    opening_minutes, confirm_minutes = settings[market]
+    start = dt.datetime.combine(end.date(), dt.time(9, 15), tzinfo=IST)
+    elapsed = int((end - start).total_seconds() / 60)
+    if elapsed < opening_minutes + confirm_minutes or (elapsed - opening_minutes) % confirm_minutes:
+        return None
+    opening = [b for b in closed if start <= b.time < start + dt.timedelta(minutes=opening_minutes)]
+    if len(opening) != opening_minutes // 5:
+        return None
+    current = closed[-confirm_minutes // 5:]
+    if len(current) != confirm_minutes // 5 or current[0].time != end - dt.timedelta(minutes=confirm_minutes):
+        return None
+    previous = [b for b in closed if b.time < current[0].time]
+    if not previous:
+        return None
+    high, low = max(b.high for b in opening), min(b.low for b in opening)
+    width = high - low
+    if width <= 0:
+        return None
+    clearance = .05 * width
+    if current[-1].close > high + clearance and previous[-1].close <= high + clearance:
+        direction, level = 'BULL', high
+    elif current[-1].close < low - clearance and previous[-1].close >= low - clearance:
+        direction, level = 'BEAR', low
+    else:
+        return None
+    return {'strategy': 'OPENING_RANGE_BREAKOUT', 'direction': direction,
+            'strength': 2, 'range_pattern': 'BREAKOUT', 'breakout_level': level,
+            'opening_minutes': opening_minutes, 'confirmation_minutes': confirm_minutes,
+            'target_r': 3.0, 'confirmation': 'MARKET_ORB_CLOSED_CONFIRMATION'}
+
+def intraday_signal(bars, now, last_bar=None, market=None):
     """ORB + EMA trend continuation + oversold/overbought reversal.
 
     Only use a genuinely just-closed 5-minute candle. No forward-looking data.
@@ -134,6 +169,11 @@ def intraday_signal(bars, now, last_bar=None):
     if len(opening) < 3:
         return None
     event=_opening_range_signal(closed,end)
+    if market in ('NIFTY', 'SENSEX'):
+        # Retain existing fakeout/trap signals, replace only ORB breakout.
+        if event and event['strategy'] == 'OPENING_RANGE_BREAKOUT':
+            event = None
+        event = event or _market_orb_breakout(closed, end, market)
     if event:
         return {**event,'bar':last.time.isoformat(),
                 'confirmed_at':end.isoformat()}
