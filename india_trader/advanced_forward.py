@@ -377,7 +377,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                         contract['symbol'],qty,settings['capital_inr'],
                                         budget['trade_risk_cap_inr'],
                                         max_allocation_fraction=settings['max_allocation_fraction'],
-                                        fee_profile='UPSTOX',flat_by=dt.time(15,25),
+                                        fee_profile='UPSTOX',flat_by=dt.time(15,20),
                                         planned_stop=risk_plan['stop_bid'],
                                         planned_target=risk_plan['target_bid'],
                                         min_net_reward_risk=1.5,
