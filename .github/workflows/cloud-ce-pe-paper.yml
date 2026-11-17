@@ -110,11 +110,31 @@ jobs:
           EMA_STATUS=0
           wait "$THREE_PID" || THREE_STATUS=$?
           wait "$EMA_PID" || EMA_STATUS=$?
-          python -m deploy.publish_three_candle_paper || THREE_STATUS=$?
-          python -m deploy.publish_ema9_ema15_paper || EMA_STATUS=$?
+          if [ -s "trader/three_candle_live/$(TZ=Asia/Kolkata date +%F).jsonl" ]; then
+            python -m deploy.publish_three_candle_paper || THREE_STATUS=$?
+          else
+            echo "::warning::3 Candle journal missing; publisher skipped (sidecar exit=$THREE_STATUS)"
+            if [ "$THREE_STATUS" -eq 0 ]; then THREE_STATUS=2; fi
+          fi
+          if [ -s "trader/ema9_ema15_live/$(TZ=Asia/Kolkata date +%F).jsonl" ]; then
+            python -m deploy.publish_ema9_ema15_paper || EMA_STATUS=$?
+          else
+            echo "::warning::EMA9/15 journal missing; publisher skipped (sidecar exit=$EMA_STATUS)"
+            if [ "$EMA_STATUS" -eq 0 ]; then EMA_STATUS=2; fi
+          fi
           kill "$THREE_PUBLISHER_PID" "$EMA_PUBLISHER_PID" 2>/dev/null || true
           wait "$THREE_PUBLISHER_PID" 2>/dev/null || true
           wait "$EMA_PUBLISHER_PID" 2>/dev/null || true
+          echo "### Strategy worker outcomes" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Worker | Exit code |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---:|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Legacy CE/PE | $result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| EMA9 V2 | $EMA9_STATUS |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 3 Candle | $THREE_STATUS |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| EMA9/15 | $EMA_STATUS |" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f trader/cloud_paper_summary.json ]; then
+            python -c 'import json; r=json.load(open("trader/cloud_paper_summary.json")); print("::notice::Legacy session status="+str(r.get("status"))+" startup="+str(r.get("startup"))+" detail="+str(r.get("failure_detail")))'
+          fi
           if [ "$THREE_STATUS" -ne 0 ] || [ "$EMA_STATUS" -ne 0 ] || [ "$result" -ne 0 ]; then
             echo FAILED > "$PAPER_STATE_FILE"
           else
