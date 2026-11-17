@@ -100,7 +100,7 @@ def main() -> int:
     failure_detail = None
     if not market or now.weekday() >= 5:
         startup = "NON_TRADING_WEEKDAY"
-    elif not (dt.time(9, 0) <= now.time() < dt.time(15, 10)):
+    elif not (dt.time(9, 0) <= now.time() < dt.time(15, 25)):
         startup = "START_OUTSIDE_ALLOWED_WINDOW"
     elif not os.environ.get("UPSTOX_ACCESS_TOKEN"):
         startup = "MISSING_UPSTOX_TOKEN"

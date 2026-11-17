@@ -63,7 +63,7 @@ def run_market(market, api, records, now, positions, finished, events, prior_cac
         pos=positions[key];s=pos["signal"];bull=pos["direction"]=="BULL"
         index_stop=bars[-1].close<=s["stop"] if bull else bars[-1].close>=s["stop"]
         index_target=bars[-1].close>=s["target"] if bull else bars[-1].close<=s["target"]
-        eod=now.time()>=dt.time(15,10)
+        eod=now.time()>=dt.time(15,25)
         if track=="INTRADAY":
             if not (index_stop or index_target or eod):continue
             points=(bars[-1].close-pos["entry"])*(1 if bull else -1)

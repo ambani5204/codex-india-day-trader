@@ -44,7 +44,7 @@ def run():
                         pos["index"]=state
                         if event=="T1_REACHED":
                             emit(f,event="INDEX_2R_CONFIRMED",market=market,time=now.isoformat(),symbol=pos["contract"]["symbol"])
-                        if event in ("STOP","TARGET_3R") or now.time()>=dt.time(15,10):
+                        if event in ("STOP","TARGET_3R") or now.time()>=dt.time(15,25):
                             q=api.full_quote(pos["contract"]["instrument_key"])
                             if abs((now-q.timestamp).total_seconds())>15 or q.bid<=0 or q.bid_qty<pos["quantity"]:
                                 emit(f,event="EXIT_QUOTE_UNAVAILABLE",market=market,time=now.isoformat(),reason=event)

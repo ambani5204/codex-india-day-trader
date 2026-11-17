@@ -144,8 +144,8 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
         raise UpstoxError('Requires derivatives paper simulation and live orders disabled')
     if args.market not in INDICES:
         raise UpstoxError('Only NIFTY/SENSEX supported')
-    if not (now.weekday()<5 and dt.time(9,15)<=now.time()<dt.time(15,10)):
-        raise UpstoxError('Start between 09:15 and 15:10 IST on a weekday')
+    if not (now.weekday()<5 and dt.time(9,15)<=now.time()<dt.time(15,25)):
+        raise UpstoxError('Start between 09:15 and 15:25 IST on a weekday')
     if args.poll_seconds<10:
         raise UpstoxError('Advanced REST chain polling must be >= 10 seconds')
     # Validate the advanced-only risk percent even when the day has no signal.
@@ -377,7 +377,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                         contract['symbol'],qty,settings['capital_inr'],
                                         budget['trade_risk_cap_inr'],
                                         max_allocation_fraction=settings['max_allocation_fraction'],
-                                        fee_profile='UPSTOX',flat_by=dt.time(15,10),
+                                        fee_profile='UPSTOX',flat_by=dt.time(15,25),
                                         planned_stop=risk_plan['stop_bid'],
                                         planned_target=risk_plan['target_bid'],
                                         min_net_reward_risk=1.5,
