@@ -72,7 +72,7 @@ def run():
                         target=(spot>=pos["index_target"] if side==1 else spot<=pos["index_target"])
                         # Strategy candle stop/target only; no arbitrary
                         # premium-percentage stop or profit target.
-                        eod=now.time()>=dt.time(15,10)
+                        eod=now.time()>=dt.time(15,25)
                         if stop or target or eod:
                             qty=pos["contract"]["lot_size"]
                             fee=option_fees(pos["entry"],q.bid,qty,pos["contract"]["exchange"],"UPSTOX")["total"]
