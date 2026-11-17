@@ -13,6 +13,23 @@ from zoneinfo import ZoneInfo
 IST = ZoneInfo("Asia/Kolkata")
 
 
+def completed_run_executed_session(repo: str, run_id: int, token: str) -> bool:
+    """A green gate-only workflow must never reserve the whole market day."""
+    url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"
+    req = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + token,
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "Cloud-Paper-Session-Dedup",
+    })
+    with urllib.request.urlopen(req, timeout=20) as response:
+        jobs = json.loads(response.read()).get("jobs", [])
+    for job in jobs:
+        for step in job.get("steps", []):
+            if step.get("name", "").startswith("Run live option-quote CE/PE paper session"):
+                return step.get("conclusion") in ("success", "failure", "cancelled")
+    return False
+
+
 def main():
     repo = os.environ["GITHUB_REPOSITORY"]
     run_id = int(os.environ["GITHUB_RUN_ID"])
@@ -46,7 +63,11 @@ def main():
         # Pre-market launches must also block later retry launches.
         # Only retry a failed/cancelled session; an active or completed
         # session owns the market day and must not be duplicated.
-        if int(run["id"]) < run_id and (run.get("status") != "completed" or run.get("conclusion") == "success"):
+        if int(run["id"]) >= run_id:
+            continue
+        if run.get("status") != "completed":
+            competing.append(run["id"])
+        elif run.get("conclusion") == "success" and completed_run_executed_session(repo, int(run["id"]), token):
             competing.append(run["id"])
     should_run = not competing
     output = os.environ.get("GITHUB_OUTPUT")
