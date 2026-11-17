@@ -194,7 +194,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
     pos=None
     engine=None
     try:
-        while clock().astimezone(IST).time()<dt.time(15,20):
+        while clock().astimezone(IST).time()<dt.time(15,30):
             now=clock().astimezone(IST)
             if pos:
                 try:
