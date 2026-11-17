@@ -78,10 +78,9 @@ def run_market(market, api, records, now, positions, finished, events, prior_cac
                 q=api.full_quote(pos["contract"]["instrument_key"])
                 if (now-q.timestamp).total_seconds()>15 or q.bid<=0 or q.bid_qty<pos["contract"]["lot_size"]:
                     continue
-                # Option premium stop/target independent of index chart stop.
-                option_stop=q.bid<=pos["entry"]*.85
-                option_target=q.bid>=pos["entry"]*1.30
-                if not (option_stop or option_target or index_stop or index_target or eod):continue
+                # The strategy's validated index candle/pivot invalidation is the
+                # sole stop trigger; never impose an unrelated premium percentage.
+                if not (index_stop or index_target or eod):continue
                 qty=pos["contract"]["lot_size"]
                 fees=option_fees(pos["entry"],q.bid,qty,pos["contract"]["exchange"],"UPSTOX")
                 net=round((q.bid-pos["entry"])*qty-fees["total"],2)
@@ -90,7 +89,7 @@ def run_market(market, api, records, now, positions, finished, events, prior_cac
                                "symbol":pos["contract"]["symbol"],"quantity":qty,
                                "entry_price":pos["entry"],"exit_price":q.bid,
                                "fees_inr":fees["total"],"net_pnl_inr":net,
-                               "reason":"OPTION_STOP" if option_stop else "OPTION_TARGET" if option_target else "INDEX_EXIT_OR_EOD",
+                               "reason":"INDEX_STOP" if index_stop else "INDEX_TARGET" if index_target else "EOD",
                                "simulated":True})
                 del positions[key]
             except (UpstoxError,ValueError,KeyError):
