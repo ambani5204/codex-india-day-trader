@@ -18,13 +18,13 @@ def main():
     run_id = int(os.environ["GITHUB_RUN_ID"])
     token = os.environ["GITHUB_TOKEN"]
     now = dt.datetime.now(IST)
-    market_window = now.weekday() < 5 and dt.time(8, 45) <= now.time() < dt.time(15, 10)
+    market_window = now.weekday() < 5 and dt.time(8, 45) <= now.time() < dt.time(15, 25)
     if not market_window:
         output = os.environ.get("GITHUB_OUTPUT")
         if output:
             with open(output, "a", encoding="utf-8") as handle:
                 handle.write("should_run=false\n")
-        print(f"Skipping outside all-strategy startup window (08:45–15:10 IST): {now.isoformat()}")
+        print(f"Skipping outside all-strategy startup window (08:45–15:25 IST): {now.isoformat()}")
         return
     url = f"https://api.github.com/repos/{repo}/actions/runs?per_page=100"
     req = urllib.request.Request(url, headers={
@@ -41,7 +41,7 @@ def main():
         if int(run["id"]) == run_id:
             continue
         created = dt.datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")).astimezone(IST)
-        if created.date() != now.date() or not dt.time(8, 45) <= created.time() < dt.time(15, 10):
+        if created.date() != now.date() or not dt.time(8, 45) <= created.time() < dt.time(15, 25):
             continue
         # Pre-market launches must also block later retry launches.
         # Only retry a failed/cancelled session; an active or completed
