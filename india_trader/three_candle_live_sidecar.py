@@ -70,18 +70,17 @@ def run():
                         side=pos["side"];spot=bars[-1].close
                         stop=(spot<=pos["index_stop"] if side==1 else spot>=pos["index_stop"])
                         target=(spot>=pos["index_target"] if side==1 else spot<=pos["index_target"])
-                        premium_stop=q.bid<=pos["entry"]*.85
-                        premium_target=q.bid>=pos["entry"]*1.30
+                        # Strategy candle stop/target only; no arbitrary
+                        # premium-percentage stop or profit target.
                         eod=now.time()>=dt.time(15,10)
-                        if stop or target or premium_stop or premium_target or eod:
+                        if stop or target or eod:
                             qty=pos["contract"]["lot_size"]
                             fee=option_fees(pos["entry"],q.bid,qty,pos["contract"]["exchange"],"UPSTOX")["total"]
                             event(journal,event="OPTION_PAPER_CLOSED",market=market,time=now.isoformat(),
                                   symbol=pos["contract"]["symbol"],quantity=qty,entry_price=pos["entry"],
                                   exit_price=q.bid,fees_inr=fee,
                                   net_pnl_inr=round((q.bid-pos["entry"])*qty-fee,2),
-                                  reason="INDEX_STOP" if stop else "INDEX_TARGET" if target else
-                                         "PREMIUM_STOP" if premium_stop else "PREMIUM_TARGET" if premium_target else "EOD")
+                                  reason="INDEX_STOP" if stop else "INDEX_TARGET" if target else "EOD")
                             del positions[market]
                 except (UpstoxError,ValueError,KeyError) as exc:
                     event(journal,event="DATA_ERROR",market=market,time=now.isoformat(),reason=type(exc).__name__)
