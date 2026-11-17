@@ -155,7 +155,13 @@ jobs:
         continue-on-error: true
         env:
           JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
-        run: python -m deploy.private_journal_sync
+        run: |
+          if ! compgen -G "trader/paper_upstox/$(TZ=Asia/Kolkata date +%F)_*.jsonl" > /dev/null; then
+            echo "::error::NO_LEGACY_JOURNAL: main paper worker produced no dated journal; nothing to archive"
+            echo "Private archive: NO_LEGACY_JOURNAL" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          python -m deploy.private_journal_sync
       - name: Publish ONLY public-safe aggregate (never raw quotes/journals)
         if: always() && steps.gate.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
@@ -171,6 +177,9 @@ jobs:
           echo "Gate: ${{ steps.gate.outputs.should_run }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Session step: ${{ steps.session.outcome }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Private journal upload: ${{ steps.private_upload.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f trader/cloud_paper_summary.json ]; then
+            python -c 'import json,os; r=json.load(open("trader/cloud_paper_summary.json")); f=os.environ["GITHUB_STEP_SUMMARY"]; open(f,"a").write("Legacy worker: "+str(r.get("status"))+"; startup: "+str(r.get("startup"))+"; reason: "+str(r.get("failure_detail"))+"\\n")'
+          fi
           if [ "${{ steps.gate.outputs.should_run }}" = "true" ] && [ "${{ steps.session.outcome }}" = "success" ] && [ "${{ steps.private_upload.outcome }}" = "success" ]; then
             echo "Verified workflow steps completed; inspect Firebase for actual trades." >> "$GITHUB_STEP_SUMMARY"
           else
