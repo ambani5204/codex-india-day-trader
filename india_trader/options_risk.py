@@ -135,6 +135,14 @@ def index_stop_plan(bars,signal,spot,now,atr_multiplier=1.5):
             else:
                 stop=low+buffer
                 basis='ORB_OPENING_LOW_RETEST'
+        if signal.get('confirmation') == 'MARKET_ORB_CLOSED_CONFIRMATION':
+            confirmation_minutes=int(signal['confirmation_minutes'])
+            confirmation=completed[-confirmation_minutes//5:]
+            if len(confirmation)!=confirmation_minutes//5:
+                raise UpstoxError('ORB confirmation candle data incomplete')
+            stop=(min(b.low for b in confirmation)-buffer if side=='BULL'
+                  else max(b.high for b in confirmation)+buffer)
+            basis='ORB_CONFIRMATION_CANDLE_EXTREME'
         atr=atr_5m(completed) if len(completed)>=15 else None
         # The original US exit skill uses a pre-committed 2R target by default.
         # It is a hypothetical projection, not an expected market move.
