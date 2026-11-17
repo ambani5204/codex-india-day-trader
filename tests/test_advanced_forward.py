@@ -25,9 +25,11 @@ class MockApi:
     def __init__(self,clock):
         self.clock=clock
     def candles(self,index):
-        t=lambda minute:dt.datetime(2026,11,12,9,minute,tzinfo=IST)
-        return [Bar(t(15),1000,1005,995,1000),Bar(t(20),1000,1005,995,1000),
-                Bar(t(25),1000,1005,995,1000),Bar(t(30),1020,1025,1015,1020)]
+        start=dt.datetime(2026,11,12,9,15,tzinfo=IST)
+        bars=[Bar(start+dt.timedelta(minutes=5*i),1000,1005,995,1000)
+              for i in range(8)]
+        bars.append(Bar(start+dt.timedelta(minutes=40),1020,1025,1015,1020))
+        return bars
     def option_chain(self,index,expiry):
         data=[]
         for strike,delta,bid,ask in ((900,-.25,24.05,24.29),(870,-.08,5,5.05),(860,-.03,1,1.01)):
@@ -107,6 +109,7 @@ def master():
 class AdvancedWorkerTests(unittest.TestCase):
     def test_one_all_day_credit_spread_completes_with_expiry_cutoff(self):
         clock=Clock()
+        clock.now=dt.datetime(2026,11,12,10,0,2,tzinfo=IST)
         cfg={'paper':True,'allow_live_orders':False,'allow_derivatives':True,
              'capital_inr':100000,'max_loss_per_trade_inr':500,
              'max_daily_loss_inr':1500,'max_trades_per_day':3,
