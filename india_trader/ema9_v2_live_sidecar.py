@@ -109,7 +109,7 @@ def main():
     # A duplicate runner must not generate duplicate paper fills.
     if path.exists():raise RuntimeError("EMA9 V2 sidecar already started today")
     with path.open("x") as journal:
-        while dt.datetime.now(IST).time()<dt.time(15,10):
+        while dt.datetime.now(IST).time()<dt.time(15,30):
             now=dt.datetime.now(IST)
             for market in ("NIFTY","SENSEX"):
                 try:run_market(market,api,records,now,positions,finished,events,prior_cache)
