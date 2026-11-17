@@ -2,6 +2,10 @@ name: Cloud CE-PE live paper trading (NO REAL ORDERS)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-ce-pe-paper.yml'
   schedule:
     # First attempt 09:00 IST; repeated opportunities if GitHub delays/drops a cron.
     # Session gate ensures only one active paper session per market day.
@@ -43,6 +47,9 @@ jobs:
       - name: Offline safety and unit tests
         if: steps.gate.outputs.should_run == 'true'
         run: python -m unittest discover -s tests -q
+      - name: Verify all live paper strategies use structural candle stops
+        if: steps.gate.outputs.should_run == 'true'
+        run: python -m unittest discover -s tests -p 'test_structural_stop_policy.py' -v
       - name: Validate ORB expiry paper-only candidate routing
         if: steps.gate.outputs.should_run == 'true'
         run: python -m india_trader.orb_expiry_shadow --self-test
