@@ -2,7 +2,6 @@
 import inspect
 import unittest
 from india_trader import ema9_v2_live_sidecar, three_candle_live_sidecar
-from india_trader.ema9_ema15_live_rules import index_entry_levels, EmaSignal
 
 class StrategyStopPolicyTests(unittest.TestCase):
     def test_fibonacci_option_exits_follow_index_structure(self):
