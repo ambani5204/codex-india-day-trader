@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import urllib.parse
+import urllib.error
 from deploy.private_journal_sync import call, DEST, SOURCE
 from india_trader.core import IST
 
@@ -24,7 +25,6 @@ def restore(day=None, token=None):
         listing = call("/repos/" + DEST + "/contents/journals/" + day, token)
     except Exception as exc:
         # A fresh market day has no archive; only a genuine 404 is acceptable.
-        import urllib.error
         if isinstance(exc, urllib.error.HTTPError) and exc.code == 404:
             return 0
         raise
