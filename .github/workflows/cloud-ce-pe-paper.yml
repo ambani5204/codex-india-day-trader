@@ -106,6 +106,7 @@ jobs:
           # All enabled paper strategies run inside this ONE market-day workflow.\n          # Sidecars preserve separate ledgers and Firestore publishers.\n          # EMA9 V2 is an independent paper-only sidecar within THIS existing workflow.
           # Its journal and Firestore collection are isolated from legacy strategies.
           python tools/india.py upstox-sync || echo "::warning::EMA9 instrument refresh failed"
+          export PAPER_SESSION_START_IST="$(TZ=Asia/Kolkata date +%H%M)"
           python -m india_trader.ema9_v2_live_sidecar &
           EMA9_PID=$!
           python -m deploy.three_candle_live_publisher &
@@ -136,13 +137,13 @@ jobs:
             python -m deploy.publish_three_candle_paper || THREE_STATUS=$?
           else
             echo "::warning::3 Candle journal missing; publisher skipped (sidecar exit=$THREE_STATUS)"
-            if [ "$THREE_STATUS" -eq 0 ]; then THREE_STATUS=2; fi
+            if [ "$THREE_STATUS" -eq 0 ] && [ "$PAPER_SESSION_START_IST" -lt 1445 ]; then THREE_STATUS=2; fi
           fi
           if [ -s "trader/ema9_ema15_live/$(TZ=Asia/Kolkata date +%F).jsonl" ]; then
             python -m deploy.publish_ema9_ema15_paper || EMA_STATUS=$?
           else
             echo "::warning::EMA9/15 journal missing; publisher skipped (sidecar exit=$EMA_STATUS)"
-            if [ "$EMA_STATUS" -eq 0 ]; then EMA_STATUS=2; fi
+            if [ "$EMA_STATUS" -eq 0 ] && [ "$PAPER_SESSION_START_IST" -lt 1445 ]; then EMA_STATUS=2; fi
           fi
           kill "$THREE_PUBLISHER_PID" "$EMA_PUBLISHER_PID" 2>/dev/null || true
           wait "$THREE_PUBLISHER_PID" 2>/dev/null || true
@@ -151,7 +152,7 @@ jobs:
           echo "| Worker | Exit code |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---:|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Legacy CE/PE | $result |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| EMA9 V2 | $EMA9_STATUS |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| EMA9 V2 | $EMA9_STATUS (noon cutoff for new sessions) |" >> "$GITHUB_STEP_SUMMARY"
           echo "| 3 Candle | $THREE_STATUS |" >> "$GITHUB_STEP_SUMMARY"
           echo "| EMA9/15 | $EMA_STATUS |" >> "$GITHUB_STEP_SUMMARY"
           if [ -f trader/cloud_paper_summary.json ]; then
