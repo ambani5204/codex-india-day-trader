@@ -1,15 +1,18 @@
-name: Forex Research - 2024 EURUSD (isolated)
+name: Forex Detailed Yearly Validation (2023-2025)
 on:
   push:
-    paths:
-      - .github/workflows/forex-execute.yml
+    paths: [.github/workflows/forex-execute.yml]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   research:
+    strategy:
+      matrix:
+        year: [2023, 2024, 2025]
+      fail-fast: false
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,43 +23,49 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Download historical EURUSD 2024
+      - name: Download and normalize EURUSD historical minute candles
+        env:
+          YEAR: ${{ matrix.year }}
         run: |
+          set -euo pipefail
           mkdir -p forex_data
-          npx --yes dukascopy-node -i eurusd -from 2024-01-01 -to 2025-01-01 -t m1 -f csv -v
-          find . -maxdepth 3 -name '*.csv' | head -20
+          npx --yes dukascopy-node -i eurusd -from "$YEAR-01-01" -to "$((YEAR+1))-01-01" -t m1 -f csv -v
           python - <<'PY'
-          import csv,glob,pathlib,datetime as dt,collections
-          paths=glob.glob("download/**/*.csv",recursive=True)
-          if not paths:raise SystemExit("DATA_UNAVAILABLE: inspect download output and fix format")
-          dest=pathlib.Path("forex_data/eurusd-2024.csv")
-          count=0; invalid=0; years=collections.Counter(); samples=[]
-          with dest.open("w",newline="") as f:
-              w=csv.writer(f);w.writerow(["timestamp","open","high","low","close"])
-              for name in paths:
-                  for row in csv.DictReader(open(name,newline="")):
-                      raw=row["timestamp"]
-                      if len(samples)<3:samples.append(raw)
-                      try:
-                          if raw.strip().replace(".","",1).isdigit():
-                              value=float(raw);value=value/1000 if value>1e11 else value
-                              stamp=dt.datetime.fromtimestamp(value,dt.timezone.utc)
-                          else:
-                              stamp=dt.datetime.fromisoformat(raw.replace("Z","+00:00"))
-                              if stamp.tzinfo is None:stamp=stamp.replace(tzinfo=dt.timezone.utc)
-                          years[stamp.year]+=1
-                          w.writerow([stamp.isoformat(),row["open"],row["high"],row["low"],row["close"]]);count+=1
-                      except (ValueError,OverflowError,KeyError):
-                          invalid+=1
-          print("raw timestamp samples",samples)
-          print("normalized candles",count,"invalid",invalid,"year distribution",dict(years))
-          if years[2024]<10000:raise SystemExit("DATA_UNAVAILABLE: source contains fewer than 10000 2024 candles after timestamp normalization")
+          import csv,glob,pathlib,os,datetime as dt,collections
+          year=int(os.environ["YEAR"])
+          files=glob.glob("download/**/*.csv",recursive=True)
+          if not files:raise SystemExit("DATA_UNAVAILABLE: no downloaded CSV")
+          out=pathlib.Path(f"forex_data/eurusd-{year}.csv")
+          years=collections.Counter();bad=0
+          with out.open("w",newline="") as dest:
+              writer=csv.writer(dest);writer.writerow(["timestamp","open","high","low","close"])
+              for file in files:
+                  with open(file,newline="") as source:
+                      for row in csv.DictReader(source):
+                          try:
+                              raw=row["timestamp"]
+                              if raw.strip().replace(".","",1).isdigit():
+                                  v=float(raw);v=v/1000 if v>1e11 else v
+                                  t=dt.datetime.fromtimestamp(v,dt.timezone.utc)
+                              else:
+                                  t=dt.datetime.fromisoformat(raw.replace("Z","+00:00"))
+                                  if t.tzinfo is None:t=t.replace(tzinfo=dt.timezone.utc)
+                              if t.year!=year:continue
+                              writer.writerow([t.isoformat(),row["open"],row["high"],row["low"],row["close"]]);years[t.year]+=1
+                          except (ValueError,OverflowError,KeyError):bad+=1
+          print("year_counts",dict(years),"invalid",bad)
+          if years[year]<10000:raise SystemExit("DATA_UNAVAILABLE: insufficient candles")
           PY
-      - name: Run yearly analysis
-        run: python forex_research/forex_yearly.py --csv forex_data/eurusd-2024.csv --pair eurusd --year 2024 --out forex_results/eurusd-2024.json
-      - uses: actions/upload-artifact@v4
+      - name: Run fixed 2024-selected strategy on this year
+        env:
+          YEAR: ${{ matrix.year }}
+        run: |
+          python forex_research/forex_detail.py --csv "forex_data/eurusd-$YEAR.csv" --pair EURUSD --year "$YEAR" --risk-inr 500 --out-dir forex_results
+      - name: Upload detailed yearly trade ledger
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: eurusd-2024-results
-          path: forex_results/*.json
+          name: eurusd-${{ matrix.year }}-detailed-results
+          path: forex_results/*
           if-no-files-found: warn
+          retention-days: 30
