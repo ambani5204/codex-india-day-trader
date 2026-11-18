@@ -52,11 +52,14 @@ def main():
     # Never silently skip SENSEX when NIFTY is also available.
     from deploy.firebase_live_publisher import publish_history
     restored = 0
+    skipped = []
     for market in sorted(markets):
         data = snapshot(market, "ARCHIVED_SESSION", "private-journal-backfill", day=day)
         if not (data["closed_trades"] or data["signals_count"] or data["entry_event_count"]):
-            raise RuntimeError("Archive contains no trade or signal events for " + market +
-                               "; refusing empty snapshot")
+            skipped.append(market)
+            print("SKIPPED EMPTY ARCHIVE: date=" + day + " market=" + market +
+                  " (no trade, entry, or signal events; existing history untouched)", flush=True)
+            continue
         # Recovery writes historical date/market only, not today's live dashboard.
         publish_history(data)
         restored += 1
@@ -64,6 +67,9 @@ def main():
               " closed_trades=" + str(data["closed_trades"]) +
               " signals=" + str(data["signals_count"]), flush=True)
     print("ARCHIVE_MARKETS_RESTORED=" + str(restored), flush=True)
+    print("ARCHIVE_MARKETS_SKIPPED_EMPTY=" + ",".join(skipped), flush=True)
+    if restored == 0:
+        raise RuntimeError("No archived market had verifiable trade or signal events; nothing published")
 
 if __name__ == "__main__":
     main()
