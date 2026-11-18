@@ -229,7 +229,7 @@ def publish(data: dict) -> None:
     project = os.environ["FIREBASE_PROJECT_ID"]
     # Durable historical record first; latest is only a disposable read model.
     publish_history(data, session=session)
-    url = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/paper_dashboard/latest"
+    url = f"https://firestore.googleapis.com/v1/projects/{project}/databases/(default)/documents/paper_dashboard/latest_{data['market']}"
     response = session.patch(url, json={"fields": {k: _firestore_field(v) for k, v in data.items()}}, timeout=25)
     response.raise_for_status()
 
@@ -239,10 +239,24 @@ def loop(market: str, state_file: str, stop_file: str) -> None:
     consecutive_failures = 0
     while True:
         state = Path(state_file).read_text().strip() if Path(state_file).exists() else "STARTING"
-        if Path(stop_file).exists():
-            state = "FINISHED" if state == "RUNNING" else state
+        worker_file = ROOT / "trader" / ("worker_status_" + market + ".json")
+        worker_result = None
+        if worker_file.exists():
+            try:
+                candidate = json.loads(worker_file.read_text(encoding="utf-8"))
+                if str(candidate.get("run_id")) == run_id:
+                    worker_result = candidate
+                    state = "FAILED" if candidate.get("exit_code") != 0 else "FINISHED"
+            except (OSError, ValueError):
+                pass
+        if Path(stop_file).exists() and worker_result is None:
+            state = "UNKNOWN" if state == "RUNNING" else state
         try:
-            publish(snapshot(market, state, run_id))
+            data = snapshot(market, state, run_id)
+            if worker_result is not None:
+                data["worker_exit_code"] = worker_result.get("exit_code")
+                data["failure_reason"] = worker_result.get("failure_reason")
+            publish(data)
             print("Private Firestore session snapshot updated", flush=True)
             consecutive_failures = 0
         except Exception as exc:
