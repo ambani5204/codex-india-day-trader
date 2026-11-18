@@ -15,7 +15,6 @@ import subprocess
 import sys
 
 from india_trader.core import IST
-from india_trader.schedule import market_for_day
 
 ROOT = Path(__file__).resolve().parents[1]
 JOURNALS = ROOT / "trader" / "paper_upstox"
@@ -99,6 +98,7 @@ def main() -> int:
     startup = "READY"
     code = 1
     failure_detail = None
+    statuses = {}
     if not market or now.weekday() >= 5:
         startup = "NON_TRADING_WEEKDAY"
     elif not (dt.time(9, 0) <= now.time() < dt.time(15, 25)):
@@ -116,7 +116,6 @@ def main() -> int:
             else:
                 try:
                     workers = {}
-                    statuses = {}
                     for selected in markets:
                         env = dict(os.environ, PAPER_MARKET_PARTITIONS=str(len(markets)))
                         workers[selected] = subprocess.Popen(
@@ -157,7 +156,7 @@ def main() -> int:
         except OSError as exc:
             startup = "PROCESS_START_FAILED"
             failure_detail = type(exc).__name__ + ": " + str(exc)[:150]
-    market_results = {selected: summarize(day, selected, statuses.get(selected, 1) if "statuses" in locals() else 1, startup) for selected in markets}
+    market_results = {selected: summarize(day, selected, statuses.get(selected, 1), startup) for selected in markets}
     result = summarize(day, market or "NONE", code, startup) if len(markets) == 1 else {
         "date_ist": day, "market": "BOTH",
         "status": "COMPLETE" if all(r["status"] == "COMPLETE" for r in market_results.values()) else "FAILED_OR_INCOMPLETE",
