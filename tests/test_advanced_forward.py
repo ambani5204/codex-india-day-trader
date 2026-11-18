@@ -266,6 +266,17 @@ class AdvancedWorkerTests(unittest.TestCase):
                 previous_day_state(root,dt.date(2026,11,12),'SENSEX')
             self.assertIn('unfinished',str(caught.exception))
 
+    def test_unfinished_nifty_does_not_block_sensex(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'2026-11-18_NIFTY_ADVANCED_092032101922.jsonl').write_text(
+                json.dumps({'event':'SESSION_START'})+'\n')
+            state=previous_day_state(root,dt.date(2026,11,18),'SENSEX')
+            self.assertEqual(state['prior_session_count'],0)
+            self.assertEqual(state['closed_trades'],0)
+            with self.assertRaises(UpstoxError):
+                previous_day_state(root,dt.date(2026,11,18),'NIFTY')
+
     def test_prior_realized_loss_and_cooldown_carry_forward(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
