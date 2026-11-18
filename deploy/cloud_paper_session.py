@@ -84,10 +84,10 @@ def summarize(day: str, market: str, worker_exit: int, startup: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--market", choices=["AUTO", "NIFTY", "SENSEX"], default="AUTO")
+    parser.add_argument("--market", choices=["AUTO", "BOTH", "NIFTY", "SENSEX"], default="AUTO")
     args = parser.parse_args()
     now = dt.datetime.now(IST)
-    market = market_for_day(now.date()) if args.market == "AUTO" else args.market
+    market = "BOTH" if args.market == "AUTO" else args.market
     day = now.date().isoformat()
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     config_path = ROOT / "trader" / "config.json"
@@ -95,6 +95,7 @@ def main() -> int:
     config.update(paper=True, allow_derivatives=True, allow_live_orders=False)
     config_path.write_text(json.dumps(config), encoding="utf-8")
     os.chmod(config_path, 0o600)
+    markets = ("NIFTY", "SENSEX") if market == "BOTH" else (market,)
     startup = "READY"
     code = 1
     failure_detail = None
@@ -114,16 +115,38 @@ def main() -> int:
                 failure_detail = "Instrument sync returned exit code " + str(sync.returncode)
             else:
                 try:
-                    worker = subprocess.run(
-                        [sys.executable, "tools/india.py", "paper-advanced",
-                         "--market", market, "--poll-seconds", "30",
-                         "--cooldown-minutes", "15"],
-                        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                        timeout=max(1, int((dt.datetime.combine(now.date(), dt.time(15, 30), tzinfo=IST) - dt.datetime.now(IST)).total_seconds())))
-                    code = worker.returncode
+                    workers = {}
+                    statuses = {}
+                    for selected in markets:
+                        env = dict(os.environ, PAPER_MARKET_PARTITIONS=str(len(markets)))
+                        workers[selected] = subprocess.Popen(
+                            [sys.executable, "tools/india.py", "paper-advanced",
+                             "--market", selected, "--poll-seconds", "30",
+                             "--cooldown-minutes", "15"],
+                            cwd=ROOT, env=env, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+                    deadline = dt.datetime.combine(now.date(), dt.time(15, 30), tzinfo=IST)
+                    for selected, worker in workers.items():
+                        remaining = max(1, int((deadline - dt.datetime.now(IST)).total_seconds()))
+                        try:
+                            statuses[selected] = worker.wait(timeout=remaining)
+                        except subprocess.TimeoutExpired:
+                            worker.terminate()
+                            try:
+                                worker.wait(timeout=10)
+                            except subprocess.TimeoutExpired:
+                                worker.kill()
+                                worker.wait()
+                            statuses[selected] = 124
+                    code = 0 if all(status == 0 for status in statuses.values()) else 1
                     if code:
-                        failure_detail = "Paper worker exited with code " + str(code)
-                except subprocess.TimeoutExpired:
+                        failure_detail = "Market worker exit codes: " + json.dumps(statuses)
+                except OSError:
+                    for worker in workers.values():
+                        if worker.poll() is None:
+                            worker.terminate()
+                    raise
+        except subprocess.TimeoutExpired:
                     startup = "WORKER_TIMEOUT"
                     failure_detail = "Paper worker exceeded its market-session timeout; journals retained for recovery"
         except subprocess.TimeoutExpired:
@@ -132,7 +155,15 @@ def main() -> int:
         except OSError as exc:
             startup = "PROCESS_START_FAILED"
             failure_detail = type(exc).__name__ + ": " + str(exc)[:150]
-    result = summarize(day, market or "NONE", code, startup)
+    market_results = {selected: summarize(day, selected, statuses.get(selected, 1) if "statuses" in locals() else 1, startup) for selected in markets}
+    result = summarize(day, market or "NONE", code, startup) if len(markets) == 1 else {
+        "date_ist": day, "market": "BOTH",
+        "status": "COMPLETE" if all(r["status"] == "COMPLETE" for r in market_results.values()) else "FAILED_OR_INCOMPLETE",
+        "startup": startup, "worker_exit_code": code,
+        "sessions": sum(r["sessions"] for r in market_results.values()),
+        "closed_trades": sum(r["closed_trades"] for r in market_results.values()),
+        "markets": market_results,
+    }
     result["failure_detail"] = failure_detail or (startup if startup != "READY" else None)
     REPORT.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))
