@@ -24,10 +24,10 @@ class DualMarketPaperTests(unittest.TestCase):
             from unittest.mock import patch
             with patch("deploy.cloud_paper_session.JOURNALS", Path(tmp)):
                 (Path(tmp) / "2026-11-18_NIFTY_091500.jsonl").write_text(
-                    json.dumps({"event": "INDEX_SIGNAL", "strategy": "EMA_8_21_CROSS"}) + "\\n" +
-                    json.dumps({"event": "SESSION_SUMMARY"}) + "\\n")
+                    json.dumps({"event": "INDEX_SIGNAL", "strategy": "EMA_8_21_CROSS"}) + "\n" +
+                    json.dumps({"event": "SESSION_SUMMARY"}) + "\n")
                 (Path(tmp) / "2026-11-18_SENSEX_091500.jsonl").write_text(
-                    json.dumps({"event": "SESSION_SUMMARY"}) + "\\n")
+                    json.dumps({"event": "SESSION_SUMMARY"}) + "\n")
                 nifty = summarize("2026-11-18", "NIFTY", 0, "READY")
                 sensex = summarize("2026-11-18", "SENSEX", 0, "READY")
                 self.assertEqual(nifty["event_counts"]["INDEX_SIGNAL"], 1)
