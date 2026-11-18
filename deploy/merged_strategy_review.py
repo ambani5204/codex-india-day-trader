@@ -101,6 +101,32 @@ def markdown(report):
     return "\n".join(lines) + "\n"
 
 
+def load_paper_report(path):
+    """Accept a single report or consecutive complete JSON report snapshots.
+
+    Some publishers append complete JSON objects instead of replacing the file.
+    The final complete snapshot is authoritative; never combine their trade totals.
+    """
+    raw = Path(path).read_text(encoding="utf-8")
+    decoder = json.JSONDecoder()
+    position = 0
+    snapshots = []
+    while position < len(raw):
+        while position < len(raw) and raw[position].isspace():
+            position += 1
+        if position == len(raw):
+            break
+        value, position = decoder.raw_decode(raw, position)
+        if not isinstance(value, dict):
+            raise ValueError("Paper evaluation snapshot must be a JSON object")
+        snapshots.append(value)
+    if not snapshots:
+        raise ValueError("Paper evaluation report is empty")
+    if len(snapshots) > 1:
+        print(f"WARNING: {len(snapshots)} concatenated evaluation snapshots; using final complete snapshot")
+    return snapshots[-1]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--paper", required=True)
@@ -108,7 +134,7 @@ def main():
     parser.add_argument("--json-out", required=True)
     parser.add_argument("--markdown-out", required=True)
     args = parser.parse_args()
-    paper = json.loads(Path(args.paper).read_text())
+    paper = load_paper_report(args.paper)
     try:
         forward = json.loads(Path(args.forward).read_text())
     except (OSError, ValueError):
