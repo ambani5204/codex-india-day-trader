@@ -139,6 +139,11 @@ def main() -> int:
                                 worker.wait()
                             statuses[selected] = 124
                     code = 0 if all(status == 0 for status in statuses.values()) else 1
+                    for selected, exit_code in statuses.items():
+                        (ROOT / "trader" / ("worker_status_" + selected + ".json")).write_text(
+                            json.dumps({"market": selected, "exit_code": exit_code,
+                                        "failure_reason": "WORKER_EXIT_" + str(exit_code) if exit_code else None,
+                                        "run_id": os.environ.get("GITHUB_RUN_ID", "")}), encoding="utf-8")
                     if code:
                         failure_detail = "Market worker exit codes: " + json.dumps(statuses)
                 except OSError:
@@ -146,9 +151,6 @@ def main() -> int:
                         if worker.poll() is None:
                             worker.terminate()
                     raise
-        except subprocess.TimeoutExpired:
-                    startup = "WORKER_TIMEOUT"
-                    failure_detail = "Paper worker exceeded its market-session timeout; journals retained for recovery"
         except subprocess.TimeoutExpired:
             startup = "INSTRUMENT_SYNC_TIMEOUT"
             failure_detail = "Instrument sync exceeded 100 seconds"
