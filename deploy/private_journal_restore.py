@@ -51,6 +51,17 @@ def restore(day=None, token=None):
         if not raw.strip() or any(not isinstance(json.loads(line), dict)
                                   for line in raw.splitlines() if line.strip()):
             raise RuntimeError("Malformed archived journal " + name)
+        # A verified start-only journal is an interrupted worker with no
+        # recorded signal, position, or trade. Keep the immutable original in
+        # the private archive, but do not rehydrate it as an active session.
+        # Any additional event remains fail-closed for manual reconciliation.
+        events = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        if (len(events) == 1 and events[0].get("event") == "SESSION_START"
+                and events[0].get("market") in ("NIFTY", "SENSEX")
+                and name.startswith(day + "_" + events[0]["market"] + "_")
+                and events[0].get("session") == name.removesuffix(".jsonl")):
+            print("ARCHIVED_START_ONLY_INTERRUPTED=" + name, flush=True)
+            continue
         path = SOURCE / name
         if path.exists():
             if path.read_bytes() != raw:
