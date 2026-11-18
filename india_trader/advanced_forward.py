@@ -107,20 +107,21 @@ def previous_day_state(folder, day, market, cooldown_minutes=15):
     while any same-day journal lacks a final summary or has an open position;
     this also prevents parallel direct CLI starts once a journal exists.
     """
-    journals=sorted(folder.glob(f'{day.isoformat()}_*.jsonl'))
+    # Each market owns its own journal and restart gate. A prior NIFTY
+    # session must never prevent SENSEX from starting (or vice versa).
+    journals=sorted(folder.glob(f'{day.isoformat()}_{market}_*.jsonl'))
     closed=[]
     prior_market_count=0
     for file in journals:
         events=_events(file)
         if not events or not any(e.get('event')=='SESSION_SUMMARY' for e in events):
-            raise UpstoxError(f'Prior paper session is unfinished: {file}. Cannot start a second worker.')
+            raise UpstoxError(f'Prior {market} paper session is unfinished: {file}. Cannot start a second worker.')
         summary=next(e for e in reversed(events) if e.get('event')=='SESSION_SUMMARY')
         if any(e.get('event')=='UNRESOLVED_POSITION' for e in events) or (
                 isinstance(summary.get('summary'),dict) and
                 summary['summary'].get('open_position')):
-            raise UpstoxError(f'Prior session has an unresolved position: {file}')
-        if file.name.startswith(day.isoformat()+'_'+market+'_'):
-            prior_market_count+=1
+            raise UpstoxError(f'Prior {market} session has an unresolved position: {file}')
+        prior_market_count+=1
         closed.extend(e for e in events if e.get('event')=='PAPER_TRADE_CLOSED')
     net=sum(float(e['net_pnl']) for e in closed)
     consumed=sum(max(0.0,-float(e['net_pnl'])) for e in closed)
