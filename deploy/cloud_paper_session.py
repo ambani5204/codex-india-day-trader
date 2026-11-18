@@ -116,14 +116,16 @@ def main() -> int:
             else:
                 try:
                     workers = {}
+                    worker_logs = {}
                     for selected in markets:
                         env = dict(os.environ, PAPER_MARKET_PARTITIONS=str(len(markets)))
+                        worker_logs[selected] = open(ROOT / "trader" / ("worker_" + selected + ".log"), "w", encoding="utf-8")
                         workers[selected] = subprocess.Popen(
                             [sys.executable, "tools/india.py", "paper-advanced",
                              "--market", selected, "--poll-seconds", "30",
                              "--cooldown-minutes", "15"],
-                            cwd=ROOT, env=env, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL)
+                            cwd=ROOT, env=env, stdout=worker_logs[selected],
+                            stderr=subprocess.STDOUT)
                     deadline = dt.datetime.combine(now.date(), dt.time(15, 30), tzinfo=IST)
                     for selected, worker in workers.items():
                         remaining = max(1, int((deadline - dt.datetime.now(IST)).total_seconds()))
@@ -137,8 +139,20 @@ def main() -> int:
                                 worker.kill()
                                 worker.wait()
                             statuses[selected] = 124
+                    for log in worker_logs.values():
+                        log.close()
                     code = 0 if all(status == 0 for status in statuses.values()) else 1
                     for selected, exit_code in statuses.items():
+                        log_path = ROOT / "trader" / ("worker_" + selected + ".log")
+                        if exit_code:
+                            import re
+                            tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
+                            safe = []
+                            for line in tail:
+                                line = re.sub(r"(?i)(token|authorization|api[_-]?key|secret|password)\\s*[:=]\\s*[^\\s,]+", r"\\1=[REDACTED]", line)
+                                safe.append(line[:350])
+                            print("WORKER_DIAGNOSTIC " + selected + " exit=" + str(exit_code) +
+                                  " log_tail=" + json.dumps(safe), flush=True)
                         (ROOT / "trader" / ("worker_status_" + selected + ".json")).write_text(
                             json.dumps({"market": selected, "exit_code": exit_code,
                                         "failure_reason": "WORKER_EXIT_" + str(exit_code) if exit_code else None,
