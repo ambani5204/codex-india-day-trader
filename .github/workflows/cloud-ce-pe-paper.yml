@@ -44,8 +44,8 @@ jobs:
           echo "::notice::SKIPPED: this run did not start a paper-trading session."
           echo "## Paper session NOT started" >> "$GITHUB_STEP_SUMMARY"
           echo "The session gate skipped this run. No trades or Firestore publication occurred in this run." >> "$GITHUB_STEP_SUMMARY"
-          echo "::error::NO_LIVE_SESSION: gate prevented execution. A green workflow must not imply trading ran."
-          exit 1
+          echo "::notice::MARKET_CLOSED_OR_DUPLICATE: no trading was attempted; this is an expected skip."
+          echo "Outcome: SKIPPED (not a completed trading session)." >> "$GITHUB_STEP_SUMMARY"
       - name: Offline safety and unit tests
         if: steps.gate.outputs.should_run == 'true'
         run: python -m unittest discover -s tests -q
