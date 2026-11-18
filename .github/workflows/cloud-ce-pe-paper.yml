@@ -82,7 +82,7 @@ jobs:
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET" > "$RUNNER_TEMP/firebase-service-account.json"
           chmod 600 "$RUNNER_TEMP/firebase-service-account.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-service-account.json"
-          export PAPER_MARKET="$(python -c 'import datetime; from india_trader.core import IST; from india_trader.schedule import market_for_day; print(market_for_day(datetime.datetime.now(IST).date()) or "NONE")')"
+          export PAPER_MARKET="BOTH"
           export PAPER_STATE_FILE="$RUNNER_TEMP/paper-state"
           export PAPER_STOP_FILE="$RUNNER_TEMP/paper-stop"
           echo STARTING > "$PAPER_STATE_FILE"
@@ -90,12 +90,15 @@ jobs:
           # Cancellation can skip post-run steps, so archive during the session.
           python -m deploy.private_journal_checkpoint &
           CHECKPOINT_PID=$!
-          python -m deploy.firebase_live_publisher &
+          PAPER_MARKET=NIFTY python -m deploy.firebase_live_publisher &
           PUBLISHER_PID=$!
+          PAPER_MARKET=SENSEX python -m deploy.firebase_live_publisher &
+          SENSEX_PUBLISHER_PID=$!
           PUBLISHER_STATUS=0
           cleanup() {
             touch "$PAPER_STOP_FILE"
             wait "$PUBLISHER_PID" || PUBLISHER_STATUS=$?
+            wait "$SENSEX_PUBLISHER_PID" || PUBLISHER_STATUS=$?
             kill "$CHECKPOINT_PID" 2>/dev/null || true
             wait "$CHECKPOINT_PID" 2>/dev/null || true
             rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
@@ -120,7 +123,7 @@ jobs:
           python -m india_trader.ema9_ema15_live_sidecar &
           EMA_PID=$!
           set +e
-          python -m deploy.cloud_paper_session
+          python -m deploy.cloud_paper_session --market BOTH
           result=$?
           set -e
           if [ "$result" -ne 0 ]; then echo FAILED > "$PAPER_STATE_FILE"; fi
