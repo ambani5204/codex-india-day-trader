@@ -1,0 +1,68 @@
+name: Mean Reversion Three-Year Independent Research
+on:
+  push:
+    branches:
+      - research/mean-reversion-365d-20261119
+    paths:
+      - '.github/workflows/mean-reversion-three-year.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  three_year:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate strategy research
+        run: python -m unittest discover -s tests -p 'test_mean_reversion_365d.py' -v
+      - name: Restore 1-minute historical cache
+        uses: actions/cache@v4
+        with:
+          path: trader/mean_reversion_1m_cache
+          key: mean-reversion-three-year-${{ github.run_id }}
+          restore-keys: |
+            mean-reversion-three-year-
+            mean-reversion-365-
+      - name: Fetch genuine three-year NIFTY and SENSEX 1-minute history
+        run: |
+          set -euo pipefail
+          test -n "$UPSTOX_ACCESS_TOKEN" || { echo "::error::Missing Upstox access token"; exit 1; }
+          python -m deploy.mean_reversion_historical_data --days 1095 --out-dir research_data
+      - name: Evaluate six timeframes and four reward-risk targets
+        run: |
+          python -m deploy.mean_reversion_365d --nifty research_data/nifty_1m.csv --sensex research_data/sensex_1m.csv --cost-bps 10 --output mean_reversion_three_year_results.json
+      - name: Rank only positive holdout configurations
+        run: |
+          python - <<'PY'
+          import json,os
+          data=json.load(open("mean_reversion_three_year_results.json"))
+          rows=[]
+          for market in ("NIFTY","SENSEX"):
+              for config,v in data[market]["combinations"].items():
+                  h=v["holdout"]
+                  if h["trades"]>=30 and h["net_r"]>0 and (h["profit_factor"] or 0)>1:
+                      rows.append((market,config,h))
+          rows.sort(key=lambda x:(x[2]["profit_factor"],x[2]["net_r"]),reverse=True)
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("## Three-year Mean Reversion index-proxy research\n\n")
+              if not rows:
+                  f.write("**NO VERIFIED POSITIVE HOLDOUT CONFIGURATION. Do not deploy.**\n")
+              else:
+                  f.write("| Market | Configuration | Trades | Win % | Net R | PF | Max DD R |\n|---|---|---:|---:|---:|---:|---:|\n")
+                  for m,k,h in rows:
+                      f.write(f"| {m} | {k} | {h['trades']} | {h['win_rate_pct']} | {h['net_r']} | {h['profit_factor']} | {h['max_drawdown_r']} |\n")
+              f.write("\n**Index proxy only, not CE/PE fills. No automatic strategy promotion.**\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mean-reversion-three-year-report
+          path: mean_reversion_three_year_results.json
+          if-no-files-found: warn
+          retention-days: 30
