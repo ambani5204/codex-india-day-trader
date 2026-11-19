@@ -144,10 +144,10 @@ def main():
     p.add_argument("--output",default="mean_reversion_v4_results.json")
     args=p.parse_args()
     if args.cost_bps<0: p.error("negative costs")
-    result={"kind":"MEAN_REVERSION_V4_RESEARCH_INDEX_PROXY","cost_bps":args.cost_bps,
+    result={"kind":"MEAN_REVERSION_V4_RESEARCH_INDEX_PROXY","trade_instrument":"NONE_INDEX_SIGNAL_RESEARCH_ONLY","option_pnl_verified":False,"deployable":False,"cost_bps":args.cost_bps,
       "NIFTY":research(args.nifty,args.cost_bps),
       "SENSEX":research(args.sensex,args.cost_bps),
-      "warning":"Index-price proxy only. Not historical CE/PE fill or option P&L. No broker orders."}
+      "warning":"NOT AN OPTIONS BACKTEST: index candles cannot establish CE/PE premium P&L, strike, expiry, lot size, bid/ask, STT, fees or fills. Do not deploy. No broker orders."}
     with open(args.output,"w") as f: json.dump(result,f,indent=2)
     print(json.dumps(result,indent=2))
 if __name__=="__main__": main()
