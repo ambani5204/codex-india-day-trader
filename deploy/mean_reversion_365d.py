@@ -45,15 +45,19 @@ def evaluate_day(bars, z, trend, rr, cost_bps):
         # Require an actual reversal close with a meaningful body, not merely a one-tick bounce.
         body = abs(bar.close-bar.open)
         full_range = bar.high-bar.low
-        if full_range <= 0 or body/full_range < .35:
+        if full_range <= 0 or body/full_range < .35 or direction*(bar.close-bar.open) <= 0:
             continue
         # Avoid entry after an excessive rebound; preserve room to the mean.
-        if direction*(avg-entry) < 1.25*risk:
+        if direction*(avg-entry) < max(1.25,rr)*risk:
             continue
         target = entry + direction*risk*rr
+        # Never count a target that lies beyond the mean-reversion reference.
         exit_price = bars[-1].close
         reason = "TIME"
         for future in bars[i+1:]:
+            # Overnight/session gaps cannot be filled at a fictional stop price.
+            if future.time.date()!=bar.time.date():
+                break
             stop_hit = future.low <= stop if direction == 1 else future.high >= stop
             target_hit = future.high >= target if direction == 1 else future.low <= target
             if stop_hit:
