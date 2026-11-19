@@ -5,6 +5,8 @@ on:
       - research/mean-reversion-365d-20261119
     paths:
       - 'deploy/mean_reversion_v4.py'
+      - 'deploy/dual_market_execution.py'
+      - 'tests/test_dual_market_execution.py'
       - '.github/workflows/mean-reversion-v4.yml'
   workflow_dispatch:
 permissions:
@@ -22,6 +24,8 @@ jobs:
           python-version: '3.11'
       - name: Validate existing research unit tests
         run: python -m unittest discover -s tests -p 'test_mean_reversion_365d.py' -v
+      - name: Validate equity and option execution accounting
+        run: python -m unittest discover -s tests -p 'test_dual_market_execution.py' -v
       - name: Restore historical 1-minute candles
         uses: actions/cache@v4
         with:
