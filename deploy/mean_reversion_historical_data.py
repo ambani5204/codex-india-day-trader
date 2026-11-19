@@ -29,8 +29,8 @@ def main():
     p.add_argument("--days",type=int,default=365)
     p.add_argument("--out-dir",default="research_data")
     args=p.parse_args()
-    if args.days<365 or args.days>730:
-        p.error("days must be 365..730")
+    if args.days<365 or args.days>1200:
+        p.error("days must be 365..1200")
     end=dt.datetime.now(IST).date()-dt.timedelta(days=1)
     start=end-dt.timedelta(days=args.days-1)
     out=Path(args.out_dir)
@@ -45,8 +45,8 @@ def main():
             raise RuntimeError(f"{market}: no genuine historical bars returned")
         dates={b.time.date() for b in bars}
         coverage=(max(dates)-min(dates)).days+1
-        if coverage<365:
-            raise RuntimeError(f"{market}: insufficient actual coverage {coverage} days; need >=365")
+        if coverage<args.days-30:
+            raise RuntimeError(f"{market}: insufficient actual coverage {coverage} days; need requested window minus 30 days")
         path=out/f"{market.lower()}_1m.csv"
         with path.open("w",newline="") as f:
             w=csv.writer(f)
