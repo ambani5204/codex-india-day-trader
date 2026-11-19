@@ -36,11 +36,18 @@ def evaluate_day(bars, z, trend, rr, cost_bps):
                      else 0)
         if not direction:
             continue
+        # Reject trend-continuation candles disguised as reversals.
+        if (direction==1 and (bar.close<=bar.open or bar.close<previous.high)) or (direction==-1 and (bar.close>=bar.open or bar.close>previous.low)):
+            continue
         entry_bar = bars[i+1]
         entry = entry_bar.open
         stop = bar.low if direction == 1 else bar.high
         risk = direction*(entry-stop)
         if risk <= 0 or risk/entry > .015 or risk/entry < .0002:
+            continue
+        # A 10-bps round-trip cost must not overwhelm a tiny candle stop.
+        # Require transaction cost to be <=20% of the initial chart risk.
+        if entry*cost_bps/10000 > .20*risk:
             continue
         # Require an actual reversal close with a meaningful body, not merely a one-tick bounce.
         body = abs(bar.close-bar.open)
@@ -64,7 +71,7 @@ def evaluate_day(bars, z, trend, rr, cost_bps):
                 exit_price, reason = (min(future.open,stop) if direction==1 else max(future.open,stop)), "STOP"
                 break
             if target_hit:
-                exit_price, reason = target, "TARGET"
+                exit_price, reason = (max(future.open,target) if direction==1 else min(future.open,target)), "TARGET"
                 break
         net_r = (direction*(exit_price-entry) - entry*cost_bps/10000)/risk
         return {"date":str(bar.time.date()),"direction":direction,"entry":entry,
