@@ -22,8 +22,8 @@ def candidate(bars,i,model,threshold):
     if model=="bollinger_rsi":
         # Public research pattern: prior-bar Bollinger extension + RSI exhaustion,
         # followed by a reversal candle. No future bars in indicators.
-        period=14
-        if len(closes)<period+1: return None
+        period=min(14,len(closes)-1)
+        if period<7: return None
         changes=[closes[k]-closes[k-1] for k in range(1,len(closes))]
         gains=sum(max(0,v) for v in changes[-period:])/period
         losses=sum(max(0,-v) for v in changes[-period:])/period
