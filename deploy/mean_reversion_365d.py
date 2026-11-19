@@ -15,10 +15,10 @@ from india_trader.core import read_bars
 def evaluate_day(bars, z, trend, rr, cost_bps):
     """One closed-candle signal/day; enter next bar OPEN, stop-first intrabar."""
     bars = sorted(bars, key=lambda b: b.time)
-    if len(bars) < 30:
+    if len(bars) < 23:
         return None
     closes = [b.close for b in bars]
-    for i in range(24, len(bars)-1):
+    for i in range(20, len(bars)-1):
         bar, previous = bars[i], bars[i-1]
         if not (dt.time(10, 0) <= bar.time.time() < dt.time(14, 30)):
             continue
@@ -37,7 +37,7 @@ def evaluate_day(bars, z, trend, rr, cost_bps):
             continue
         entry_bar = bars[i+1]
         entry = entry_bar.open
-        stop = min(b.low for b in bars[max(0,i-2):i+1]) if direction == 1 else max(b.high for b in bars[max(0,i-2):i+1])
+        stop = bar.low if direction == 1 else bar.high
         risk = direction*(entry-stop)
         if risk <= 0 or risk/entry > .015 or risk/entry < .0002:
             continue
@@ -48,7 +48,7 @@ def evaluate_day(bars, z, trend, rr, cost_bps):
             stop_hit = future.low <= stop if direction == 1 else future.high >= stop
             target_hit = future.high >= target if direction == 1 else future.low <= target
             if stop_hit:
-                exit_price, reason = stop, "STOP"
+                exit_price, reason = (min(future.open,stop) if direction==1 else max(future.open,stop)), "STOP"
                 break
             if target_hit:
                 exit_price, reason = target, "TARGET"
@@ -113,6 +113,55 @@ def run(path, cost_bps):
             "training":training,"holdout":holdout,"passes_proxy_gate":qualified,
             "warning":"Index-price proxy only. No historical option-chain prices, lot sizes, option brokerage, spreads or actual option fills. Do not deploy on this result."}
 
+
+def resample(bars, minutes):
+    if minutes == 1:
+        return bars
+    from india_trader.core import Bar
+    groups=defaultdict(list)
+    for b in bars:
+        offset=b.time.hour*60+b.time.minute-555
+        if 0<=offset<375:
+            groups[(b.time.date(),offset//minutes)].append(b)
+    output=[]
+    for _,seq in sorted(groups.items()):
+        seq.sort(key=lambda b:b.time)
+        if len(seq)!=minutes:
+            continue
+        output.append(Bar(seq[0].time,seq[0].open,max(x.high for x in seq),
+                          min(x.low for x in seq),seq[-1].close,sum(x.volume for x in seq)))
+    return output
+
+def matrix(path,cost_bps):
+    raw=read_bars(path)
+    dates=sorted({b.time.date() for b in raw})
+    if not dates or (dates[-1]-dates[0]).days<364:
+        raise ValueError("365-day genuine 1-minute historical coverage required")
+    results={}
+    split=max(1,int(len(dates)*.7))
+    for minutes in (1,3,5,10,15,30):
+        by_day=defaultdict(list)
+        for b in resample(raw,minutes):
+            by_day[b.time.date()].append(b)
+        for rr in (1.,1.5,2.,3.):
+            candidates=[]
+            for z,trend in itertools.product((1.5,2.,2.5),(.001,.0025,.005)):
+                trades=[t for d in dates[:split] if (t:=evaluate_day(by_day[d],z,trend,rr,cost_bps))]
+                stats=summarize(trades)
+                if stats["trades"]>=15:
+                    candidates.append((stats["net_r"],stats["trades"],z,trend))
+            key=str(minutes)+"m_RR_"+str(rr)
+            if not candidates:
+                results[key]={"status":"INSUFFICIENT_TRAINING_TRADES","holdout":summarize([])}
+                continue
+            _,_,z,trend=max(candidates)
+            trades=[t for d in dates[split:] if (t:=evaluate_day(by_day[d],z,trend,rr,cost_bps))]
+            results[key]={"status":"INDEX_PROXY_ONLY","timeframe_minutes":minutes,
+                          "reward_risk":rr,"stop_rule":"signal_candle_high_low",
+                          "selected":{"z":z,"trend":trend},"holdout":summarize(trades)}
+    return {"sessions":len(dates),"calendar_days":(dates[-1]-dates[0]).days+1,
+            "combinations":results}
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--nifty",required=True)
@@ -122,9 +171,9 @@ def main():
     args = parser.parse_args()
     if args.cost_bps < 0:
         parser.error("cost-bps must be nonnegative")
-    results = {"kind":"MEAN_REVERSION_365D_INDEX_PROXY_RESEARCH",
-               "NIFTY":run(args.nifty,args.cost_bps),
-               "SENSEX":run(args.sensex,args.cost_bps)}
+    results = {"kind":"MEAN_REVERSION_365D_MULTI_TIMEFRAME_INDEX_PROXY",
+               "NIFTY":matrix(args.nifty,args.cost_bps),
+               "SENSEX":matrix(args.sensex,args.cost_bps)}
     with open(args.output,"w",encoding="utf-8") as f:
         json.dump(results,f,indent=2)
     print(json.dumps(results,indent=2))
