@@ -126,7 +126,8 @@ def main() -> int:
                              "--cooldown-minutes", "15"],
                             cwd=ROOT, env=env, stdout=worker_logs[selected],
                             stderr=subprocess.STDOUT)
-                    # The worker polls at 30-second intervals and writes SESSION_SUMMARY after\n                    # its 15:30 trading-loop exit. Give finalization time before terminating.\n                    deadline = dt.datetime.combine(now.date(), dt.time(15, 32), tzinfo=IST)
+                    # Workers stop trading at 15:30; allow two minutes to write SESSION_SUMMARY.
+                    deadline = dt.datetime.combine(now.date(), dt.time(15, 32), tzinfo=IST)
                     for selected, worker in workers.items():
                         remaining = max(1, int((deadline - dt.datetime.now(IST)).total_seconds()))
                         try:
