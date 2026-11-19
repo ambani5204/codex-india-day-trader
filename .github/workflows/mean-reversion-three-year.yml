@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/mean-reversion-three-year.yml'
       - 'deploy/mean_reversion_365d.py'
+      - 'deploy/mean_reversion_v4.py'
       - 'deploy/mean_reversion_historical_data.py'
   workflow_dispatch:
 permissions:
@@ -61,6 +62,26 @@ jobs:
                       f.write(f"| {m} | {k} | {h['trades']} | {h['win_rate_pct']} | {h['net_r']} | {h['profit_factor']} | {h['max_drawdown_r']} |\n")
               f.write("\n**Index proxy only, not CE/PE fills. No automatic strategy promotion.**\n")
           PY
+      - name: Evaluate V4 competing reversal models with forward-only folds
+        run: |
+          python -m deploy.mean_reversion_v4 --nifty research_data/nifty_1m.csv --sensex research_data/sensex_1m.csv --cost-bps 10 --output mean_reversion_v4_results.json
+      - name: Publish V4 walk-forward scorecard
+        run: |
+          python - <<'PY'
+          import json,os
+          d=json.load(open('mean_reversion_v4_results.json'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('\n## V4 three-year forward-only validation\n\n| Market | TF | OOS trades | Net R | Positive folds | Qualified |\n|---|---|---:|---:|---:|---|\n')
+              for market in ('NIFTY','SENSEX'):
+                  for tf,v in d[market]['timeframes'].items():
+                      f.write(f"| {market} | {tf} | {v['total_holdout_trades']} | {v['total_holdout_net_r']} | {v['positive_folds']}/3 | {v['qualified']} |\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mean-reversion-v4-three-year-results
+          path: mean_reversion_v4_results.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: always()
         with:
