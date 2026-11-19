@@ -21,9 +21,9 @@ GitHub source: private `ambani5204/codex-trading-journals` repository, tree `1db
 | 2026-11-19 | NIFTY / 115044 | `339a32e34896` | 26 | 1 | 2 | 1 | -778.24 |
 | 2026-11-19 | SENSEX / 115044 | `8a1badb012f5` | 14 | 1 | 2 | 0 | n/a |
 
-**Aggregate of inspected files:** 12 sessions; **4** with SESSION_SUMMARY; **8** missing it; **3** PAPER_TRADE_CLOSED with numeric P&L (₹ -2,786.18 in aggregate); **26 INDEX_SIGNAL** event occurrences (NOT unique actionable signals and NOT filled trades). There are **4 start-only journals** (2026-11-18 both markets 092032; 2026-11-19 both markets 113600). There are also other no-summary journals with additional events, including **one closed trade** on 2026-11-16; classify those as **incomplete**, not blank or successfully closed.
+**Aggregate of inspected files:** 12 sessions; **3** with SESSION_SUMMARY; **9** missing it; **3** PAPER_TRADE_CLOSED with numeric P&L (₹ -2,786.18 in aggregate); **26 INDEX_SIGNAL** event occurrences (NOT unique actionable signals and NOT filled trades). There are **4 start-only journals** (2026-11-18 both markets 092032; 2026-11-19 both markets 113600). There are also other no-summary journals with additional events, including **one closed trade** on 2026-11-16; classify those as **incomplete**, not blank or successfully closed.
 
-**Caveat:** The 2026-11-13 journal has a `SESSION_SUMMARY` timestamp 15:20 IST. Verify intended close-time policy and early termination before counting it as a fully valid market session. Likewise, 2026-11-19 closing summaries must be reconciled against order/position and Firestore state. 4 summaries means 4 *recorded* summaries, not four independently proven successful sessions. A 0 P&L in a journal without closed trades was **not** assumed; report P&L as unavailable.
+**Caveat:** The 2026-11-13 journal has a `SESSION_SUMMARY` timestamp 15:20 IST. Verify intended close-time policy and early termination before counting it as a fully valid market session. Likewise, 2026-11-19 closing summaries must be reconciled against order/position and Firestore state. 3 summaries means 3 *recorded* summaries, not four independently proven successful sessions. A 0 P&L in a journal without closed trades was **not** assumed; report P&L as unavailable.
 
 ## Source-verified restart design
 
@@ -48,8 +48,8 @@ Read-only Android contract was documented separately in `docs/audit/ANDROID_FIRE
 
 ## Phase 0 findings and recommended gates
 
-1. **P1 — interrupted/incomplete archived sessions.** Eight of twelve journal files lack a summary. Require per-session state machines and explicit recovery/incident status, without deleting any archive or converting an interruption to a 0-signal healthy day.
-2. **P1 — unreliable session success inference.** Workflow/job CI green does not imply session execution (previously demonstrated via run 44538910622); 4 recorded summaries do not guarantee a reconciled session.
+1. **P1 — interrupted/incomplete archived sessions.** Nine of twelve journal files lack a summary. Require per-session state machines and explicit recovery/incident status, without deleting any archive or converting an interruption to a 0-signal healthy day.
+2. **P1 — unreliable session success inference.** Workflow/job CI green does not imply session execution (previously demonstrated via run 44538910622); 3 recorded summaries do not guarantee a reconciled session.
 3. **P1 — source contract discrepancy.** `paper_evaluations` data is written, Android requests it, but reviewed rules do not include read permission. Validate effective rules via owner/non-owner emulator tests before scoped rule change.
 4. **P1 — financial denominator discrepancy.** 30-record `trade_ledger` must not define whole-day or all-history strategy totals. Regression-test 31+ synthetic closed events with partial data before separate implementation PR.
 5. **P2 — collection consistency.** `paper_history` and `paper_dashboard` are sequential writes; evaluate idempotent, revision-stamped atomic publication/reconciliation and stale representation.
