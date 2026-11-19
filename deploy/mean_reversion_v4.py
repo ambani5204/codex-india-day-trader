@@ -10,7 +10,8 @@ from deploy.mean_reversion_365d import resample,summarize
 
 def candidate(bars,i,model,threshold):
     bar,prev=bars[i],bars[i-1]
-    hist=bars[i-20:i]
+    lookback=min(20,max(8,int(60 / max(1,(bars[1].time-bars[0].time).total_seconds()/60))))
+    hist=bars[i-lookback:i]
     closes=[x.close for x in hist]
     avg=mean(closes)
     sd=pstdev(closes)
@@ -36,8 +37,9 @@ def candidate(bars,i,model,threshold):
     return direction,anchor
 
 def evaluate(bars,model,threshold,rr,cost_bps):
-    if len(bars)<25: return None
-    for i in range(20,len(bars)-1):
+    if len(bars)<12: return None
+    lookback=min(20,max(8,int(60 / max(1,(bars[1].time-bars[0].time).total_seconds()/60))))
+    for i in range(lookback,len(bars)-1):
         b=bars[i]
         if not dt.time(10,0)<=b.time.time()<dt.time(14,0): continue
         found=candidate(bars,i,model,threshold)
