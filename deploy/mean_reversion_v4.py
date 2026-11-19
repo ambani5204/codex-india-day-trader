@@ -19,7 +19,18 @@ def candidate(bars,i,model,threshold):
     # VWAP is valid only with positive actual volumes; no synthetic volume.
     volume=sum(x.volume for x in bars[:i+1])
     vwap=sum(x.close*x.volume for x in bars[:i+1])/volume if volume>0 else None
-    if model=="z_reversal":
+    if model=="bollinger_rsi":
+        # Public research pattern: prior-bar Bollinger extension + RSI exhaustion,
+        # followed by a reversal candle. No future bars in indicators.
+        period=14
+        if len(closes)<period+1: return None
+        changes=[closes[k]-closes[k-1] for k in range(1,len(closes))]
+        gains=sum(max(0,v) for v in changes[-period:])/period
+        losses=sum(max(0,-v) for v in changes[-period:])/period
+        rsi=100 if losses==0 else 100-100/(1+gains/losses)
+        direction=1 if prev.close<avg-threshold*sd and rsi<35 and bar.close>prev.close else (-1 if prev.close>avg+threshold*sd and rsi>65 and bar.close<prev.close else 0)
+        anchor=avg
+    elif model=="z_reversal":
         direction=1 if prev.close<avg-threshold*sd and bar.close>prev.close else (-1 if prev.close>avg+threshold*sd and bar.close<prev.close else 0)
         anchor=avg
     elif model=="failed_breakout":
@@ -92,7 +103,7 @@ def research(path,cost_bps):
     for minutes in (5,15):
         byday=defaultdict(list)
         for b in resample(raw,minutes): byday[b.time.date()].append(b)
-        configurations=list(itertools.product(("z_reversal","failed_breakout","vwap_reclaim"),(1.5,2.0),(1.,2.)))
+        configurations=list(itertools.product(("z_reversal","failed_breakout","vwap_reclaim","bollinger_rsi"),(1.5,2.0),(1.,2.)))
         cache={}
         rejection_diagnostics={}
         for model,threshold,rr in configurations:
