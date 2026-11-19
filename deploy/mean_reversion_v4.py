@@ -36,22 +36,34 @@ def candidate(bars,i,model,threshold):
     if direction*(anchor-bar.close)<=0: return None
     return direction,anchor
 
-def evaluate(bars,model,threshold,rr,cost_bps):
+def evaluate(bars,model,threshold,rr,cost_bps,diagnostics=None):
+    def count(key):
+        if diagnostics is not None: diagnostics[key]=diagnostics.get(key,0)+1
     if len(bars)<12: return None
     lookback=min(20,max(8,int(60 / max(1,(bars[1].time-bars[0].time).total_seconds()/60))))
     for i in range(lookback,len(bars)-1):
         b=bars[i]
         if not dt.time(10,0)<=b.time.time()<dt.time(14,0): continue
         found=candidate(bars,i,model,threshold)
-        if not found: continue
+        if not found:
+            count('no_reversal_setup')
+            continue
+        count('reversal_setup')
         direction,anchor=found
         entry=bars[i+1].open
         stop=b.low if direction==1 else b.high
         risk=direction*(entry-stop)
-        if risk<=0 or risk/entry>.01 or risk/entry<.0001: continue
+        if risk<=0 or risk/entry>.01 or risk/entry<.0001:
+            count('invalid_candle_stop')
+            continue
         # Conservative round-trip index proxy cost, expressed in risk units.
-        if entry*cost_bps/10000>.5*risk: continue
-        if direction*(anchor-entry)<rr*risk: continue
+        if entry*cost_bps/10000>.5*risk:
+            count('cost_too_large_for_stop')
+            continue
+        if direction*(anchor-entry)<rr*risk:
+            count('insufficient_room_to_mean')
+            continue
+        count('tradable_signal')
         target=entry+direction*rr*risk
         exit_price=bars[-1].close
         reason="SESSION_CLOSE"
@@ -82,11 +94,14 @@ def research(path,cost_bps):
         for b in resample(raw,minutes): byday[b.time.date()].append(b)
         configurations=list(itertools.product(("z_reversal","failed_breakout","vwap_reclaim"),(1.5,2.0),(1.,2.)))
         cache={}
+        rejection_diagnostics={}
         for model,threshold,rr in configurations:
+            diagnostic={}
             cache[(model,threshold,rr)]={
                 d:trade for d in dates
-                if (trade:=evaluate(byday[d],model,threshold,rr,cost_bps)) is not None
+                if (trade:=evaluate(byday[d],model,threshold,rr,cost_bps,diagnostic)) is not None
             }
+            rejection_diagnostics[f'{model}_z{threshold}_rr{rr}']=diagnostic
         # Expanding train / forward-only test, three separate out-of-sample blocks.
         windows=[(.4,.6),(.6,.8),(.8,1.)]
         folds=[]
@@ -114,7 +129,7 @@ def research(path,cost_bps):
         net=sum(x["holdout"]["net_r"] for x in tested)
         count=sum(x["holdout"]["trades"] for x in tested)
         profitable=sum(x["holdout"]["net_r"]>0 for x in tested)
-        outcomes[f"{minutes}m"]={"folds":folds,"training_diagnostics":training_diagnostics,"total_holdout_trades":count,
+        outcomes[f"{minutes}m"]={"folds":folds,"training_diagnostics":training_diagnostics,"rejection_diagnostics":rejection_diagnostics,"total_holdout_trades":count,
            "total_holdout_net_r":round(net,3),
            "positive_folds":profitable,
            "qualified":len(tested)==3 and count>=100 and profitable>=2 and net>0}
