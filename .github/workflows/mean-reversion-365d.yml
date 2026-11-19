@@ -29,14 +29,14 @@ jobs:
       - name: Restore existing historical market cache
         uses: actions/cache@v4
         with:
-          path: trader/backtest_cache
+          path: trader/mean_reversion_1m_cache
           key: mean-reversion-365-${{ github.run_id }}
           restore-keys: |
             ema9-fib-365-
             three-candle-v2-
             ema9-daily-
             mean-reversion-365-
-      - name: Fetch genuine NIFTY and SENSEX 5m candles
+      - name: Fetch genuine NIFTY and SENSEX 1m candles
         run: |
           set -euo pipefail
           test -n "$UPSTOX_ACCESS_TOKEN" || { echo "::error::UPSTOX_ACCESS_TOKEN secret missing"; exit 1; }
@@ -47,20 +47,21 @@ jobs:
           done
       - name: Run real 365+ day NIFTY and SENSEX index-proxy backtest
         run: |
-          python -m deploy.mean_reversion_365d --nifty research_data/nifty_5m.csv --sensex research_data/sensex_5m.csv --cost-bps 10 --output mean_reversion_365d_results.json
-      - name: Publish metrics to GitHub summary
+          python -m deploy.mean_reversion_365d --nifty research_data/nifty_1m.csv --sensex research_data/sensex_1m.csv --cost-bps 10 --output mean_reversion_365d_results.json
+      - name: Publish 48-combination comparison
         if: success()
         run: |
           python - <<'PY'
           import json,os
           d=json.load(open("mean_reversion_365d_results.json"))
           with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
-              f.write("## Mean Reversion 365-day index proxy (not CE/PE fills)\n\n")
-              f.write("| Market | Sessions | Holdout trades | Win % | Net R | PF | Max DD R | Proxy gate |\n|---|---:|---:|---:|---:|---:|---:|---|\n")
+              f.write("## Mean Reversion 365-day index-price proxy\n\n")
+              f.write("| Index | Candle | RR | Trades | Win % | Net R | PF | Max DD R |\n|---|---|---|---:|---:|---:|---:|---:|\n")
               for market in ("NIFTY","SENSEX"):
-                  x=d[market]; h=x.get("holdout",{})
-                  f.write(f"| {market} | {x.get('sessions','—')} | {h.get('trades','—')} | {h.get('win_rate_pct','—')} | {h.get('net_r','—')} | {h.get('profit_factor','—')} | {h.get('max_drawdown_r','—')} | {x.get('passes_proxy_gate',False)} |\n")
-              f.write("\n**Not executable options P&L. No broker orders.**\n")
+                  for key,v in d[market]["combinations"].items():
+                      h=v["holdout"]
+                      f.write(f"| {market} | {key.split('_')[0]} | {key.split('_')[-1]} | {h['trades']} | {h['win_rate_pct']} | {h['net_r']} | {h['profit_factor']} | {h['max_drawdown_r']} |\n")
+              f.write("\nIndex-only cost proxy; not historical CE/PE execution P&L.\n")
           PY
       - uses: actions/upload-artifact@v4
         if: always()
