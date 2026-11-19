@@ -15,19 +15,20 @@ from india_trader.core import read_bars
 def evaluate_day(bars, z, trend, rr, cost_bps):
     """One closed-candle signal/day; enter next bar OPEN, stop-first intrabar."""
     bars = sorted(bars, key=lambda b: b.time)
-    if len(bars) < 23:
+    if len(bars) < 12:
         return None
     closes = [b.close for b in bars]
-    for i in range(20, len(bars)-1):
+    lookback = min(20, max(8, int(60 / max(1, (bars[1].time-bars[0].time).total_seconds()/60))))
+    for i in range(lookback, len(bars)-1):
         bar, previous = bars[i], bars[i-1]
-        if not (dt.time(10, 0) <= bar.time.time() < dt.time(14, 30)):
+        if not (dt.time(10, 0) <= bar.time.time() < dt.time(13, 30)):
             continue
-        reference = closes[i-20:i]
+        reference = closes[i-lookback:i]
         avg, sigma = mean(reference), pstdev(reference)
         if sigma <= 0:
             continue
-        fast = mean(closes[i-7:i+1])
-        slow = mean(closes[i-20:i+1])
+        fast = mean(closes[i-max(3,lookback//3):i+1])
+        slow = mean(closes[i-lookback:i+1])
         if abs(fast/slow-1) > trend:
             continue
         direction = (1 if previous.close < avg-z*sigma and bar.close > previous.close and bar.close < avg
@@ -40,6 +41,14 @@ def evaluate_day(bars, z, trend, rr, cost_bps):
         stop = bar.low if direction == 1 else bar.high
         risk = direction*(entry-stop)
         if risk <= 0 or risk/entry > .015 or risk/entry < .0002:
+            continue
+        # Require an actual reversal close with a meaningful body, not merely a one-tick bounce.
+        body = abs(bar.close-bar.open)
+        full_range = bar.high-bar.low
+        if full_range <= 0 or body/full_range < .35:
+            continue
+        # Avoid entry after an excessive rebound; preserve room to the mean.
+        if direction*(avg-entry) < 1.25*risk:
             continue
         target = entry + direction*risk*rr
         exit_price = bars[-1].close
