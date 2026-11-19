@@ -1,6 +1,13 @@
 name: Mean Reversion 365-Day Research
 
 on:
+  push:
+    branches:
+      - research/mean-reversion-365d-20261119
+    paths:
+      - '.github/workflows/mean-reversion-365d.yml'
+      - 'deploy/mean_reversion_365d.py'
+      - 'tests/test_mean_reversion_365d.py'
   workflow_dispatch:
     inputs:
       nifty_csv_url:
@@ -21,7 +28,20 @@ permissions:
   contents: read
 
 jobs:
+  research-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run research unit tests
+        run: |
+          python -m pip install pytest
+          python -m pytest tests/test_mean_reversion_365d.py -q
+
   backtest:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -29,8 +49,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install project
-        run: python -m pip install -e .
       - name: Download historical CSVs
         env:
           NIFTY_URL: ${{ inputs.nifty_csv_url }}
