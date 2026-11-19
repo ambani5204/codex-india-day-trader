@@ -37,6 +37,16 @@ class LivePaperContract(TestCase):
         # Controller allows worker finalization after the 15:30 market cutoff.
         self.assertIn("dt.time(15, 32)",cloud)
 
+    def test_cloud_controller_deadline_is_executable(self):
+        import ast
+        source=(ROOT/"deploy/cloud_paper_session.py").read_text()
+        tree=ast.parse(source)
+        assignments=[node for node in ast.walk(tree) if isinstance(node,ast.Assign)
+                     and any(isinstance(target,ast.Name) and target.id=="deadline"
+                             for target in node.targets)]
+        self.assertEqual(len(assignments),1)
+        self.assertIn("dt.time(15, 32)",ast.get_source_segment(source,assignments[0]))
+
     def test_previous_success_without_worker_is_not_session(self):
         response={"jobs":[{"steps":[{"name":"Prevent duplicate market-day sessions across retry triggers","conclusion":"success"},
                                      {"name":"Run live option-quote CE/PE paper session (read only)","conclusion":"skipped"}]}]}
