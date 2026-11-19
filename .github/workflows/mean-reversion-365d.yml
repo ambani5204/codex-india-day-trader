@@ -1,0 +1,65 @@
+name: Mean Reversion 365-Day Research
+
+on:
+  workflow_dispatch:
+    inputs:
+      nifty_csv_url:
+        description: 'HTTPS URL to genuine NIFTY 5-minute OHLC CSV (365+ calendar days)'
+        required: true
+        type: string
+      sensex_csv_url:
+        description: 'HTTPS URL to genuine SENSEX 5-minute OHLC CSV (365+ calendar days)'
+        required: true
+        type: string
+      cost_bps:
+        description: 'Round-trip index proxy transaction costs in basis points'
+        required: true
+        default: '10'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install project
+        run: python -m pip install -e .
+      - name: Download historical CSVs
+        env:
+          NIFTY_URL: ${{ inputs.nifty_csv_url }}
+          SENSEX_URL: ${{ inputs.sensex_csv_url }}
+        run: |
+          mkdir -p research_data
+          python - <<'PY'
+          import os, urllib.parse, urllib.request
+          for name, env in [('nifty','NIFTY_URL'),('sensex','SENSEX_URL')]:
+              url=os.environ[env]
+              parsed=urllib.parse.urlparse(url)
+              if parsed.scheme!='https' or not parsed.hostname:
+                  raise SystemExit(f'{name}: HTTPS data URL required')
+              with urllib.request.urlopen(url,timeout=90) as response:
+                  data=response.read(100_000_001)
+              if len(data)>100_000_000:
+                  raise SystemExit(f'{name}: file exceeds 100 MB')
+              with open(f'research_data/{name}_5m.csv','wb') as f:
+                  f.write(data)
+          PY
+      - name: Run isolated 365-day research
+        env:
+          COST_BPS: ${{ inputs.cost_bps }}
+        run: |
+          python -m deploy.mean_reversion_365d --nifty research_data/nifty_5m.csv --sensex research_data/sensex_5m.csv --cost-bps "$COST_BPS" --output mean_reversion_365d_results.json
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mean-reversion-365d-results
+          path: mean_reversion_365d_results.json
+          if-no-files-found: ignore
