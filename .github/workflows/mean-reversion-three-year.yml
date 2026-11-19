@@ -5,6 +5,8 @@ on:
       - research/mean-reversion-365d-20261119
     paths:
       - '.github/workflows/mean-reversion-three-year.yml'
+      - 'deploy/mean_reversion_365d.py'
+      - 'deploy/mean_reversion_historical_data.py'
   workflow_dispatch:
 permissions:
   contents: read
