@@ -18,11 +18,13 @@ class LivePaperContract(TestCase):
         self.assertIn('cron: "0,15,30,45 4 * * 1-5"',yaml)
         self.assertIn('cron: "0,15,30 5 * * 1-5"',yaml)
 
-    def test_skipped_workflow_cannot_report_success(self):
+    def test_skipped_workflow_is_explicit_without_failing_ci(self):
         yaml=(ROOT/".github/workflows/cloud-ce-pe-paper.yml").read_text()
         step=yaml.split("      - name: Report duplicate or inactive paper session explicitly")[1].split("      - name: Offline safety and unit tests")[0]
-        self.assertIn("exit 1",step)
-        self.assertIn("NO_LIVE_SESSION",step)
+        self.assertIn("SKIPPED",step)
+        self.assertIn("MARKET_CLOSED_OR_DUPLICATE",step)
+        self.assertNotIn("exit 1",step)
+        self.assertNotIn("NO_LIVE_SESSION",step)
 
     def test_1530_monitoring_contract(self):
         files=["india_trader/advanced_forward.py","india_trader/ema9_v2_live_sidecar.py",
@@ -32,7 +34,8 @@ class LivePaperContract(TestCase):
             with self.subTest(filename=filename):
                 self.assertIn("dt.time(15,30)",source)
         cloud=(ROOT/"deploy/cloud_paper_session.py").read_text()
-        self.assertIn("dt.time(15, 30)",cloud)
+        # Controller allows worker finalization after the 15:30 market cutoff.
+        self.assertIn("dt.time(15, 32)",cloud)
 
     def test_previous_success_without_worker_is_not_session(self):
         response={"jobs":[{"steps":[{"name":"Prevent duplicate market-day sessions across retry triggers","conclusion":"success"},
