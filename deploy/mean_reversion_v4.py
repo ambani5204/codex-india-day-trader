@@ -90,14 +90,18 @@ def research(path,cost_bps):
         # Expanding train / forward-only test, three separate out-of-sample blocks.
         windows=[(.4,.6),(.6,.8),(.8,1.)]
         folds=[]
+        training_diagnostics=[]
         for train_frac,end_frac in windows:
             cut=int(len(dates)*train_frac)
             end=min(len(dates),int(len(dates)*end_frac))
             ranked=[]
+            training_rank=[]
             for cfg,trades in cache.items():
                 s=summarize([trades[d] for d in dates[:cut] if d in trades])
+                training_rank.append({"model":cfg[0],"threshold":cfg[1],"reward_risk":cfg[2],**s})
                 if s["trades"]>=30 and s["net_r"]>0 and (s["profit_factor"] or 0)>1:
                     ranked.append((s["net_r"],cfg))
+            training_diagnostics.append({"train_sessions":cut,"top_by_net_r":sorted(training_rank,key=lambda x:x["net_r"],reverse=True)[:5],"models_with_30_trades":sum(x["trades"]>=30 for x in training_rank)})
             if not ranked:
                 folds.append({"status":"NO_POSITIVE_TRAINING_MODEL","test_sessions":end-cut})
                 continue
@@ -110,7 +114,7 @@ def research(path,cost_bps):
         net=sum(x["holdout"]["net_r"] for x in tested)
         count=sum(x["holdout"]["trades"] for x in tested)
         profitable=sum(x["holdout"]["net_r"]>0 for x in tested)
-        outcomes[f"{minutes}m"]={"folds":folds,"total_holdout_trades":count,
+        outcomes[f"{minutes}m"]={"folds":folds,"training_diagnostics":training_diagnostics,"total_holdout_trades":count,
            "total_holdout_net_r":round(net,3),
            "positive_folds":profitable,
            "qualified":len(tested)==3 and count>=100 and profitable>=2 and net>0}
