@@ -99,11 +99,18 @@ def research(path,cost_bps):
     if not dates or (dates[-1]-dates[0]).days<1094:
         raise ValueError("V4 requires >=1095 calendar days genuine data")
     outcomes={}
+    # A zero-volume index series cannot support volume-weighted VWAP research.
+    volume_bars=sum(1 for b in raw if b.volume>0)
+    volume_quality={"positive_volume_bars":volume_bars,"total_bars":len(raw),
+                    "vwap_research_supported":volume_bars==len(raw)}
     # 5m and 15m first: six models/thresholds x two RRs; fewer degrees of freedom.
     for minutes in (5,15):
         byday=defaultdict(list)
         for b in resample(raw,minutes): byday[b.time.date()].append(b)
-        configurations=list(itertools.product(("z_reversal","failed_breakout","vwap_reclaim","bollinger_rsi"),(1.5,2.0),(1.,2.)))
+        models=("z_reversal","failed_breakout","bollinger_rsi")
+        if volume_quality["vwap_research_supported"]:
+            models+=("vwap_reclaim",)
+        configurations=list(itertools.product(models,(1.5,2.0),(1.,2.)))
         cache={}
         rejection_diagnostics={}
         for model,threshold,rr in configurations:
@@ -145,7 +152,7 @@ def research(path,cost_bps):
            "positive_folds":profitable,
            "qualified":len(tested)==3 and count>=100 and profitable>=2 and net>0}
     return {"sessions":len(dates),"calendar_days":(dates[-1]-dates[0]).days+1,
-            "timeframes":outcomes}
+            "volume_quality":volume_quality,"timeframes":outcomes}
 
 def main():
     p=argparse.ArgumentParser()
