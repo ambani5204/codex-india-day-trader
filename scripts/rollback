@@ -50,6 +50,13 @@ def rollback(root: Path, change_id: str, manifest: Path) -> str:
     parent_line = git(root, "rev-list", "--parents", "-n", "1", sha).stdout.split()
     if len(parent_line) != 2:
         raise RollbackError("Merge or root commits require a separate approved rollback")
+    if git(root, "log", "-1", "--format=%B").stdout.startswith("Revert "):
+        # An immediately repeated rollback must never attempt a second revert.
+        recent = git(root, "log", "-1", "--format=%B").stdout
+        if sha in recent or git(root, "show", "-s", "--format=%P", "HEAD").stdout.strip():
+            existing = git(root, "branch", "--list", f"restore-points/{change_id}-*").stdout.strip()
+            if existing:
+                raise RollbackError("Restore point already exists; refuse duplicate rollback")
     head = git(root, "rev-parse", "HEAD").stdout.strip()
     restore_ref = f"restore-points/{change_id}-{head[:12]}"
     if git(root, "show-ref", "--verify", "--quiet", "refs/heads/" + restore_ref,
