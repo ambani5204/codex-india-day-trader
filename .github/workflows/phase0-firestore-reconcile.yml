@@ -1,4 +1,5 @@
 name: Phase 0 read-only private journal Firestore reconciliation
+# CHG-20261121-0043: audit-branch push trigger for credential-safe diagnostic
 on:
   push:
     branches:
