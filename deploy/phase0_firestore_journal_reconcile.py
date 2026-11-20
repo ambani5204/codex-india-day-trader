@@ -81,6 +81,18 @@ def check_match(history, events, file_count):
     return "COUNTS_MATCH_SESSION_TERMINATION_UNVERIFIED"
 
 
+def duplicate_history_keys(rows):
+    """Identify ambiguous date/market history without exposing financial values."""
+    seen = set()
+    duplicates = set()
+    for row in rows:
+        key = (str(row["date_ist"]), row["market"])
+        if key in seen:
+            duplicates.add(key)
+        seen.add(key)
+    return duplicates
+
+
 def gh_get(token, path):
     if not path.startswith("/") or ".." in path or "?" in path:
         raise ValueError("Unsafe GitHub path")
@@ -174,6 +186,9 @@ def main():
         stage = "FIRESTORE_HISTORY"
         rows = get_history()
         targets = [r for r in rows if r.get("market") in MARKETS and r.get("date_ist")]
+        if duplicate_history_keys(targets):
+            print("PHASE0_RECONCILIATION=BLOCKED reason=DUPLICATE_HISTORY_KEYS", flush=True)
+            return 4
         stage = "ARCHIVE_READ"
         archives = {date: load_archives(token, date)
                     for date in sorted({str(r["date_ist"]) for r in targets})}
