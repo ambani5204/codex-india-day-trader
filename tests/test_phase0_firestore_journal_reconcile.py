@@ -29,6 +29,23 @@ EVENTS = [
 
 
 class FirestoreArchiveReconcileTests(unittest.TestCase):
+    def test_duplicate_history_date_market_is_blocked(self):
+        rows = [
+            {"date_ist": "2026-11-19", "market": "NIFTY"},
+            {"date_ist": "2026-11-19", "market": "NIFTY"},
+        ]
+        self.assertEqual(reconcile.duplicate_history_keys(rows),
+                         {("2026-11-19", "NIFTY")})
+
+    def test_distinct_market_date_keys_are_not_duplicates(self):
+        rows = [
+            {"date_ist": "2026-11-19", "market": "NIFTY"},
+            {"date_ist": "2026-11-19", "market": "SENSEX"},
+            {"date_ist": "2026-11-18", "market": "NIFTY"},
+        ]
+        self.assertEqual(reconcile.duplicate_history_keys(rows), set())
+
+
     def test_archive_http404_is_not_silently_treated_as_empty(self):
         error = urllib.error.HTTPError("https://api.github.com/example", 404, "Not Found", {}, None)
         with patch.object(reconcile, "gh_get", side_effect=error):
