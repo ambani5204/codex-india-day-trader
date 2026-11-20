@@ -40,3 +40,16 @@
 ## User digest and rollback
 
 Changes associated with this evidence package: `CHG-20261120-0013` on isolated unmerged branch. Undo before merge: close/abandon the draft PR. No runtime behavior changed. Post-merge `scripts/rollback --to CHG-20261120-0013` not available/registered; exact merged revert not tested, so merge remains blocked. Critical owner asks: 0.
+
+
+## Subsequent live-evidence addendum — 2026-11-20 03:17 IST (supersedes older UNKNOWN entries above)
+
+**Authenticated Firestore GET-only inspection VERIFIED** in [run 44665611987](https://github.com/ambani5204/codex-india-day-trader/actions/runs/44665611987). Six collections exhaustively scanned within bounded page cap (no next-page token): `paper_dashboard` 3 records /25 observed top-level fields; `paper_history` 8/25; `paper_evaluations` 7/18; `three_candle_paper` 8/16; `ema9_ema15_paper` 8/19; `three_candle_nightly` 8/6. Only field names/types were logged; no financial values or IDs. This upgrades deployed **collection/type existence** from unknown to verified, but **effective Android client rules and private journal parity remain unknown**.
+
+**Actual Firestore internal financial consistency:** [run 44666732450](https://github.com/ambani5204/codex-india-day-trader/actions/runs/44666732450), exact code/tests head `d63c2745bf748956311f433b204d1d4ad75295d2`, nine synthetic tests PASS and **14/15** live check outcomes MATCH (7 market-day history self-consistency; 2 latest/history; 5 evaluation/history). One `paper_evaluations/2026-11-14` has **no corresponding eligible paper_history**; Nov 14 was Saturday. **P0 incident [#20](https://github.com/ambani5204/codex-india-day-trader/issues/20)**. An initially reported Nov19 warning was a false positive caused by treating a zero-trade SENSEX null P&L as incomplete; fixed with preregistered test correction and rerun. The remaining orphan record is not automatically deleted or overwritten.
+
+**Private archive ↔ Firestore comparison was NOT performed:** [run 44666175016](https://github.com/ambani5204/codex-india-day-trader/actions/runs/44666175016) passed six offline tests but obtained `HTTP 404` at GitHub private repository metadata GET from CI. Authenticated in-chat GitHub connector can access it, but CI permission is a separate scope. **P0 incident [#21](https://github.com/ambani5204/codex-india-day-trader/issues/21)**. No trade/fee/identity reconciliation assertion is justified.
+
+**Offline matrix:** [run 44666732355](https://github.com/ambani5204/codex-india-day-trader/actions/runs/44666732355), head `d63c2745bf748956311f433b204d1d4ad75295d2`, Python 3.10, 3.11, 3.12 syntax/unit steps successful. Python 3.11 log: `Ran 196 tests in 4.632s`, `OK`. Read-only invariant CI intentionally returns exit code 4 for an open integrity finding; do not misclassify that as passing production integrity.
+
+**Revised gate decision (authoritative):** Phase 0 remains **NOT EXIT QUALIFIED** because private archive↔Firestore comparison, unexplained orphan evaluation, Android client security-rules check, real option data coverage and production code/config/schema/APK rollback drills are outstanding. Phase 1 remains **NOT STARTED** under §17 despite drafting Phase 1 *inputs*. Existing feature PRs remain unmerged; paper-only mode. No owner critical asks. Continue phase-gated automation.
