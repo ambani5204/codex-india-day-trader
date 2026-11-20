@@ -55,6 +55,20 @@ class FirestoreInternalReconcileTests(unittest.TestCase):
         self.assertEqual(compare_evaluation({**report, "net_pnl": -9.0},
                                             [history]), "EVALUATION_NET_MISMATCH")
 
+    def test_null_pnl_is_correct_for_zero_closed_market(self):
+        nifty = snapshot()
+        sensex = snapshot(market="SENSEX", closed_trades=0,
+                          pnl_coverage=0, net_pnl=None, strategy_stats={})
+        report = {"closed_trades": 1, "verified_pnl_trades": 1, "net_pnl": -12.0}
+        self.assertEqual(compare_evaluation(report, [nifty, sensex]), "MATCH")
+
+    def test_truly_partial_financial_coverage_remains_blocked(self):
+        unknown = snapshot(market="SENSEX", closed_trades=1,
+                           pnl_coverage=0, net_pnl=None, strategy_stats={})
+        report = {"closed_trades": 2, "verified_pnl_trades": 1, "net_pnl": -12.0}
+        self.assertEqual(compare_evaluation(report, [snapshot(), unknown]),
+                         "EVALUATION_PARTIAL_FINANCIAL_COVERAGE")
+
     def test_empty_date_is_not_healthy(self):
         self.assertEqual(compare_evaluation({}, []), "NO_HISTORY_FOR_DATE")
 
