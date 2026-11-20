@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Fail-closed Git SOURCE rollback for preregistered, Git-only changes.
+
+This does not roll back deployed services, Firestore, journal databases, or APKs.
+Use an independently verified deployment/database restore plan for those assets.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+CHANGE_ID = re.compile(r"^CHG-[0-9]{8}-[0-9]{4}$")
+SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+class RollbackError(Exception):
+    pass
+
+
+def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(root), *args],
+                          text=True, capture_output=True, check=check)
+
+
+def rollback(root: Path, change_id: str, manifest: Path) -> str:
+    if not CHANGE_ID.fullmatch(change_id):
+        raise RollbackError("Invalid change ID")
+    if not (root / ".git").exists():
+        raise RollbackError("Not a Git worktree; no changes made")
+    if git(root, "status", "--porcelain").stdout.strip():
+        raise RollbackError("Dirty worktree: refuse rollback")
+    try:
+        registry = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RollbackError("Missing or corrupt rollback registry") from exc
+    entry = (registry.get("changes") or {}).get(change_id)
+    if not isinstance(entry, dict) or entry.get("kind") != "git-only":
+        raise RollbackError("Change is not registered for source-only rollback")
+    sha = entry.get("commit")
+    if not isinstance(sha, str) or not SHA.fullmatch(sha):
+        raise RollbackError("Registered commit SHA is invalid")
+    if git(root, "cat-file", "-e", sha + "^{commit}", check=False).returncode:
+        raise RollbackError("Registered Git commit is unavailable")
+    if git(root, "merge-base", "--is-ancestor", sha, "HEAD", check=False).returncode:
+        raise RollbackError("Registered commit is not an ancestor of HEAD")
+    parent_line = git(root, "rev-list", "--parents", "-n", "1", sha).stdout.split()
+    if len(parent_line) != 2:
+        raise RollbackError("Merge or root commits require a separate approved rollback")
+    existing_restore = git(root, "branch", "--list", f"restore-points/{change_id}-*").stdout.strip()
+    if existing_restore:
+        raise RollbackError("Restore point already exists; refuse duplicate rollback")
+    prior_restore_points = git(root, "for-each-ref", "--format=%(refname:short)",
+                               "refs/heads/restore-points/" + change_id + "-*").stdout.strip()
+    if prior_restore_points:
+        raise RollbackError("Restore point already exists for change; refuse repeat rollback")
+    head = git(root, "rev-parse", "HEAD").stdout.strip()
+    restore_ref = f"restore-points/{change_id}-{head[:12]}"
+    if git(root, "show-ref", "--verify", "--quiet", "refs/heads/" + restore_ref,
+           check=False).returncode == 0:
+        raise RollbackError("Restore point already exists; refuse duplicate rollback")
+    git(root, "branch", restore_ref, "HEAD")
+    result = git(root, "revert", "--no-edit", sha, check=False)
+    if result.returncode:
+        # Preserve the pre-revert branch even on conflict.
+        git(root, "revert", "--abort", check=False)
+        raise RollbackError("Git revert failed; inspect restore branch: " + restore_ref)
+    if git(root, "status", "--porcelain").stdout.strip():
+        raise RollbackError("Rollback left a dirty worktree; inspect restore point")
+    return restore_ref
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--to", required=True, dest="change_id")
+    parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[1],
+                        help="Local Git repository (test fixtures may override)")
+    parser.add_argument("--manifest", type=Path, default=None)
+    args = parser.parse_args(argv)
+    root = args.repo.resolve()
+    manifest = args.manifest or (root / "ops" / "rollback_manifest.json")
+    try:
+        restore_ref = rollback(root, args.change_id, manifest)
+    except (RollbackError, subprocess.CalledProcessError) as exc:
+        print("ROLLBACK_REFUSED: " + str(exc), file=sys.stderr)
+        return 2
+    print("SOURCE_ROLLBACK_REVERTED change=" + args.change_id +
+          " restore_branch=" + restore_ref)
+    print("NOT_RESTORED: deployments, Firestore, broker state, private journals, APK")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
