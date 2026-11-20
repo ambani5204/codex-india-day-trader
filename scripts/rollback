@@ -53,6 +53,10 @@ def rollback(root: Path, change_id: str, manifest: Path) -> str:
     existing_restore = git(root, "branch", "--list", f"restore-points/{change_id}-*").stdout.strip()
     if existing_restore:
         raise RollbackError("Restore point already exists; refuse duplicate rollback")
+    prior_restore_points = git(root, "for-each-ref", "--format=%(refname:short)",
+                               "refs/heads/restore-points/" + change_id + "-").stdout.strip()
+    if prior_restore_points:
+        raise RollbackError("Restore point already exists for change; refuse repeat rollback")
     head = git(root, "rev-parse", "HEAD").stdout.strip()
     restore_ref = f"restore-points/{change_id}-{head[:12]}"
     if git(root, "show-ref", "--verify", "--quiet", "refs/heads/" + restore_ref,
