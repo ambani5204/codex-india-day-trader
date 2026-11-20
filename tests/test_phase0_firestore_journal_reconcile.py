@@ -47,6 +47,14 @@ class FirestoreArchiveReconcileTests(unittest.TestCase):
         self.assertEqual(check_match(row(), EVENTS, 1),
                          "COUNTS_MATCH_SESSION_TERMINATION_UNVERIFIED")
 
+    def test_missing_session_summary_is_not_a_verified_session(self):
+        events = [e for e in EVENTS if e["event"] != "SESSION_SUMMARY"]
+        self.assertEqual(check_match(row(), events, 1), "MISSING_SESSION_SUMMARY")
+
+    def test_session_summary_does_not_prove_terminal_state(self):
+        self.assertEqual(check_match(row(), EVENTS, 1),
+                         "COUNTS_MATCH_SESSION_TERMINATION_UNVERIFIED")
+
     def test_missing_archive_is_not_zero_trades(self):
         self.assertEqual(check_match(row(closed_trades=0, signals_count=0,
                                          pnl_coverage=0, net_pnl=None), [], 0),
