@@ -1,8 +1,10 @@
 """Offline test of conservative private-archive/live-ledger comparison."""
 import unittest
+import urllib.error
+from unittest.mock import patch
 
 from deploy.phase0_firestore_journal_reconcile import (
-    as_number, summarize_events, check_match,
+    as_number, summarize_events, check_match, load_archives,
 )
 
 
@@ -26,6 +28,23 @@ EVENTS = [
 
 
 class FirestoreArchiveReconcileTests(unittest.TestCase):
+    def test_archive_directory_404_fails_closed_not_empty(self):
+        error = urllib.error.HTTPError(
+            "https://api.github.com/placeholder", 404, "Not Found", {}, None
+        )
+        with patch("deploy.phase0_firestore_journal_reconcile.gh_get", side_effect=error):
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                load_archives("not-a-real-token", "2026-11-19")
+        self.assertEqual(raised.exception.code, 404)
+
+    def test_archive_other_http_failure_fails_closed(self):
+        error = urllib.error.HTTPError(
+            "https://api.github.com/placeholder", 403, "Forbidden", {}, None
+        )
+        with patch("deploy.phase0_firestore_journal_reconcile.gh_get", side_effect=error):
+            with self.assertRaises(urllib.error.HTTPError):
+                load_archives("not-a-real-token", "2026-11-19")
+
     def test_verified_counts_do_not_claim_session_reconciliation(self):
         self.assertEqual(check_match(row(), EVENTS, 1),
                          "COUNTS_MATCH_SESSION_TERMINATION_UNVERIFIED")
