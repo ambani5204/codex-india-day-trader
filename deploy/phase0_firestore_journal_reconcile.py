@@ -161,12 +161,15 @@ def main():
     if not token or not os.getenv("FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET") or not os.getenv("FIREBASE_PROJECT_ID"):
         print("PHASE0_RECONCILIATION=UNAVAILABLE reason=MISSING_CONFIG", flush=True)
         return 2
+    stage = "PRIVATE_REPO"
     try:
         meta = gh_get(token, "/")
         if meta.get("full_name", "").lower() != REPOSITORY.lower() or meta.get("private") is not True:
             raise ValueError("Private repository check failed")
+        stage = "FIRESTORE_HISTORY"
         rows = get_history()
         targets = [r for r in rows if r.get("market") in MARKETS and r.get("date_ist")]
+        stage = "ARCHIVE_READ"
         archives = {date: load_archives(token, date)
                     for date in sorted({str(r["date_ist"]) for r in targets})}
         results = []
@@ -189,8 +192,13 @@ def main():
         print("PHASE0_RECONCILIATION=COUNTS_MATCH; SESSION_TERMINATION_AND_OPTIONS_FILLS_UNVERIFIED records=" +
               str(len(results)), flush=True)
         return 0
+    except urllib.error.HTTPError as exc:
+        print("PHASE0_RECONCILIATION=FAILED stage=" + stage +
+              " http_status=" + str(exc.code), flush=True)
+        return 3
     except Exception as exc:
-        print("PHASE0_RECONCILIATION=FAILED exception_type=" + type(exc).__name__,
+        print("PHASE0_RECONCILIATION=FAILED stage=" + stage +
+              " exception_type=" + type(exc).__name__,
               flush=True)
         return 3
 
