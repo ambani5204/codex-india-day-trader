@@ -80,7 +80,10 @@ def check_match(history, events, file_count):
 def gh_get(token, path):
     if not path.startswith("/") or ".." in path or "?" in path:
         raise ValueError("Unsafe GitHub path")
-    request = urllib.request.Request(API + path, headers={
+    # Repository metadata endpoint is /repos/{owner}/{repo}, without a trailing slash.
+    # A trailing slash can produce 404 even when the token is valid.
+    url = API if path == "/" else API + path
+    request = urllib.request.Request(url, headers={
         "Authorization": "Bearer " + token,
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
