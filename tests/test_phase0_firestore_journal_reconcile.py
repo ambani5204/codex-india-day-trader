@@ -1,5 +1,7 @@
 """Offline test of conservative private-archive/live-ledger comparison."""
 import unittest
+from unittest.mock import patch
+from deploy import phase0_firestore_journal_reconcile as reconcile
 
 from deploy.phase0_firestore_journal_reconcile import (
     as_number, summarize_events, check_match,
@@ -26,6 +28,21 @@ EVENTS = [
 
 
 class FirestoreArchiveReconcileTests(unittest.TestCase):
+    def test_repository_metadata_uses_canonical_url_without_trailing_slash(self):
+        class FakeResponse:
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b'{"full_name":"ambani5204/codex-trading-journals","private":true}'
+        captured = []
+        def fake_open(request, timeout):
+            captured.append(request.full_url)
+            return FakeResponse()
+        with patch.object(reconcile.urllib.request, "urlopen", side_effect=fake_open):
+            result = reconcile.gh_get("synthetic-token", "/")
+        self.assertEqual(captured, [reconcile.API])
+        self.assertTrue(result["private"])
+
+
     def test_verified_counts_do_not_claim_session_reconciliation(self):
         self.assertEqual(check_match(row(), EVENTS, 1),
                          "COUNTS_MATCH_SESSION_TERMINATION_UNVERIFIED")
