@@ -16,6 +16,7 @@ class TestEmaJournalContract(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "EMA9_15_NO_JOURNAL"):
                         sidecar.main()
     def test_eligible_nonempty_journal_is_accepted(self):
+        fixed = dt.datetime(2026, 11, 20, 10, 30, tzinfo=sidecar.IST)
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory)/"2026-11-20.jsonl").write_text('{"event":"SESSION_START"}\n')
             with patch.object(sidecar, "OUT", Path(directory)), patch.object(sidecar, "run", return_value=None):
