@@ -74,6 +74,10 @@ def check_match(history, events, file_count):
         return "PNL_MISMATCH"
     if stats["closed"] > stats["coverage"]:
         return "PARTIAL_FINANCIAL_COVERAGE"
+    # Matching counters do not establish that a session reached its terminal event.
+    # Require at least one summary, but do not treat it as proof of correct shutdown.
+    if stats["summaries"] == 0:
+        return "MISSING_SESSION_SUMMARY"
     return "COUNTS_MATCH_SESSION_TERMINATION_UNVERIFIED"
 
 
