@@ -162,7 +162,7 @@ def main():
         print("PHASE0_RECONCILIATION=UNAVAILABLE reason=MISSING_CONFIG", flush=True)
         return 2
     try:
-        meta = gh_get(token, "")
+        meta = gh_get(token, "/")
         if meta.get("full_name", "").lower() != REPOSITORY.lower() or meta.get("private") is not True:
             raise ValueError("Private repository check failed")
         rows = get_history()
