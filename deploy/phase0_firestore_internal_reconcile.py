@@ -83,10 +83,14 @@ def compare_evaluation(report, days):
     coverage = sum(x["pnl_coverage"] for x in days if isinstance(x.get("pnl_coverage"), int))
     if not comparable(report.get("closed_trades"), closed) or not comparable(report.get("verified_pnl_trades"), coverage):
         return "EVALUATION_COUNTER_MISMATCH"
+    if coverage < closed:
+        return "EVALUATION_PARTIAL_FINANCIAL_COVERAGE"
     if coverage:
-        if any(as_number(x.get("net_pnl")) is None for x in days):
+        if any(as_number(x.get("net_pnl")) is None
+               for x in days if isinstance(x.get("pnl_coverage"), int)
+               and x["pnl_coverage"] > 0):
             return "EVALUATION_INCOMPLETE_COVERAGE"
-        total = sum(as_number(x["net_pnl"]) for x in days)
+        total = sum(as_number(x.get("net_pnl")) or 0.0 for x in days)
         if not comparable(report.get("net_pnl"), round(total, 2)):
             return "EVALUATION_NET_MISMATCH"
     elif report.get("net_pnl") is not None:
