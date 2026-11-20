@@ -1,5 +1,6 @@
 """Offline test of conservative private-archive/live-ledger comparison."""
 import unittest
+import urllib.error
 from unittest.mock import patch
 from deploy import phase0_firestore_journal_reconcile as reconcile
 
@@ -28,6 +29,14 @@ EVENTS = [
 
 
 class FirestoreArchiveReconcileTests(unittest.TestCase):
+    def test_archive_http404_is_not_silently_treated_as_empty(self):
+        error = urllib.error.HTTPError("https://api.github.com/example", 404, "Not Found", {}, None)
+        with patch.object(reconcile, "gh_get", side_effect=error):
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                reconcile.load_archives("synthetic-token", "2026-11-14")
+        self.assertEqual(caught.exception.code, 404)
+
+
     def test_repository_metadata_uses_canonical_url_without_trailing_slash(self):
         class FakeResponse:
             def __enter__(self): return self
