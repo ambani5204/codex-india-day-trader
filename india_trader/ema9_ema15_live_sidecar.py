@@ -91,4 +91,15 @@ def run():
             time.sleep(20)
         for market,pos in positions.items():
             emit(f,event="UNRESOLVED_POSITION",market=market,time=dt.datetime.now(IST).isoformat(),symbol=pos["contract"]["symbol"])
-if __name__=="__main__":run()
+def main():
+    """Fail explicitly when an eligible worker exits without a durable journal."""
+    started=dt.datetime.now(IST)
+    run()
+    journal=OUT/(str(started.date())+".jsonl")
+    eligible=started.weekday()<5 and started.time()<dt.time(14,45)
+    if eligible and (not journal.is_file() or journal.stat().st_size==0):
+        raise RuntimeError("EMA9_15_NO_JOURNAL_AFTER_ELIGIBLE_RUN: paper session incomplete")
+    if not eligible:
+        print("EMA9_15_SKIPPED_OUTSIDE_START_WINDOW",flush=True)
+
+if __name__=="__main__":main()
