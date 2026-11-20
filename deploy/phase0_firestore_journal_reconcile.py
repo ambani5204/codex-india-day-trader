@@ -101,12 +101,10 @@ def load_archives(token, date):
     dt.date.fromisoformat(date)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
         raise ValueError("Invalid archive date")
-    try:
-        listing = gh_get(token, "/contents/journals/" + date)
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return {}
-        raise
+    # Do not classify a 404 as an empty archive: it can also indicate
+    # missing permissions, a renamed path, or a deleted archive.
+    # Fail closed and preserve the HTTP status for incident triage.
+    listing = gh_get(token, "/contents/journals/" + date)
     if not isinstance(listing, list):
         raise ValueError("Archive listing is not a directory")
     events = defaultdict(list)
