@@ -109,6 +109,19 @@ def unpack(field):
     return None
 
 
+def write_paper_report(path, report):
+    """Write one valid JSON document with a real newline terminator.
+
+    The downstream review parser also supports concatenated complete snapshots.
+    A literal backslash-n suffix is invalid JSON and must never be emitted.
+    """
+    import json
+    from pathlib import Path
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
 def main():
     import google.auth
     from google.auth.transport.requests import AuthorizedSession
@@ -160,11 +173,7 @@ def main():
         response.raise_for_status()
     output = os.environ.get("PAPER_EVALUATION_REPORT_PATH")
     if output:
-        import json
-        from pathlib import Path
-        destination = Path(output)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(json.dumps(report, indent=2) + "\\n", encoding="utf-8")
+        write_paper_report(output, report)
 
 
 if __name__ == "__main__":
