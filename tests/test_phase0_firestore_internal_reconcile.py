@@ -2,7 +2,7 @@
 import unittest
 
 from deploy.phase0_firestore_internal_reconcile import (
-    validate_day, compare_latest, compare_evaluation,
+    validate_day, compare_latest, compare_evaluation, valid_history_key,
 )
 
 
@@ -30,6 +30,12 @@ def snapshot(**extra):
 
 
 class FirestoreInternalReconcileTests(unittest.TestCase):
+    def test_valid_history_key(self):
+        self.assertTrue(valid_history_key(snapshot()))
+        for row in (None, {}, snapshot(date_ist=""), snapshot(date_ist="  "),
+                    snapshot(date_ist=None), snapshot(market="UNKNOWN")):
+            self.assertFalse(valid_history_key(row))
+
     def test_consistent_single_trade_passes(self):
         self.assertEqual(validate_day(snapshot()), "MATCH")
 
