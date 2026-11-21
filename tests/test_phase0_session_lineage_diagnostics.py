@@ -16,6 +16,22 @@ class SessionLineageDiagnosticsTests(unittest.TestCase):
         result = classify_market_date_lineage([row("synthetic-a")])
         self.assertEqual(result["status"], "NO_MULTIROW_GROUPS")
 
+    def test_singleton_missing_run_id_fails_closed(self):
+        result = classify_market_date_lineage([row(None)])
+        self.assertEqual(result["status"], "BLOCKED_MISSING_RUN_ID")
+        self.assertEqual(result["ambiguous_groups"], 0)
+        self.assertIn("BLOCKED_MISSING_RUN_ID", safe_summary(result))
+
+    def test_singleton_whitespace_run_id_fails_closed(self):
+        self.assertEqual(classify_market_date_lineage([row("  ")])["status"],
+                         "BLOCKED_MISSING_RUN_ID")
+
+    def test_invalid_calendar_dates_fail_closed(self):
+        for invalid in ("2026-11-31", "2026-02-29", "2026-11-1",
+                        "2026-11-19T09:15:00", "19-11-2026"):
+            self.assertEqual(classify_market_date_lineage([row("a", day=invalid)])["status"],
+                             "INVALID_HISTORY_KEY")
+
     def test_distinct_run_ids_still_block_until_event_provenance(self):
         result = classify_market_date_lineage([row("synthetic-a"), row("synthetic-b")])
         self.assertEqual(result["status"], "BLOCKED_LINEAGE_UNVERIFIED")
