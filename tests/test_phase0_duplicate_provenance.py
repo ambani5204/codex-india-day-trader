@@ -59,6 +59,14 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(classify_orphan_evaluation("2026-11-13", histories, {"run_id": "a"}),
                          "AMBIGUOUS_HISTORY")
 
+    def test_unavailable_history_fails_closed(self):
+        self.assertEqual(classify_history_groups(None), {"status": "HISTORY_UNAVAILABLE"})
+        self.assertEqual(classify_orphan_evaluation("2026-11-14", None, {}), "HISTORY_UNAVAILABLE")
+
+    def test_malformed_history_fails_closed(self):
+        self.assertEqual(classify_history_groups([None]), {"status": "INVALID_HISTORY_ROW"})
+        self.assertEqual(classify_orphan_evaluation("2026-11-14", [None], {}), "INVALID_HISTORY_ROWS")
+
     def test_invalid_date(self):
         self.assertEqual(classify_orphan_evaluation("bad-date", [], {}),
                          "INVALID_REPORT_DATE")
