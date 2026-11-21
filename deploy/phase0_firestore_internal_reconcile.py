@@ -75,6 +75,15 @@ def valid_history_key(row):
             and row.get("market") in {"NIFTY", "SENSEX"})
 
 
+def select_paper_history(rows):
+    """Fail closed if untyped history could be silently excluded from the audit."""
+    if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+        return "INVALID_HISTORY_ROWS", []
+    if any(r.get("data_type") is None for r in rows):
+        return "UNTYPED_HISTORY_PRESENT", []
+    return "MATCH", [r for r in rows if r.get("data_type") == "PAPER_SIMULATION"]
+
+
 def compare_latest(latest, historical):
     for key in ("date_ist", "market", "run_id", "closed_trades",
                 "pnl_coverage", "signals_count", "entry_event_count",
@@ -152,7 +161,10 @@ def main():
         return 2
     try:
         docs = firestore_get_collections()
-        history = [r for _, r in docs["paper_history"] if r.get("data_type") == "PAPER_SIMULATION"]
+        history_status, history = select_paper_history([r for _, r in docs["paper_history"]])
+        if history_status != "MATCH":
+            print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=" + history_status, flush=True)
+            return 4
         from deploy.phase0_duplicate_provenance import classify_history_groups
         duplicate_audit = classify_history_groups(history)
         if duplicate_audit.get("status"):
