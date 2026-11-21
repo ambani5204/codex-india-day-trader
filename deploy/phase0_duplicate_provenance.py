@@ -7,8 +7,12 @@ from collections import defaultdict
 
 
 def classify_history_groups(rows):
+    if rows is None:
+        return {"status": "HISTORY_UNAVAILABLE"}
     groups = defaultdict(list)
     for row in rows:
+        if not isinstance(row, dict):
+            return {"status": "INVALID_HISTORY_ROW"}
         market, day = row.get("market"), row.get("date_ist")
         if market not in {"NIFTY", "SENSEX"} or not isinstance(day, str) or not day:
             continue
@@ -48,6 +52,10 @@ def classify_orphan_evaluation(report_date, histories, evaluation):
         return "INVALID_REPORT_DATE"
     if not isinstance(evaluation, dict):
         return "EVALUATION_UNAVAILABLE"
+    if histories is None:
+        return "HISTORY_UNAVAILABLE"
+    if not isinstance(histories, (list, tuple)) or any(not isinstance(r, dict) for r in histories):
+        return "INVALID_HISTORY_ROWS"
     eligible = [r for r in histories
                 if r.get("date_ist") == report_date
                 and r.get("data_type") == "PAPER_SIMULATION"]
