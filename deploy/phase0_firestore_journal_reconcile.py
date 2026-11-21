@@ -63,6 +63,8 @@ def check_match(history, events, file_count):
     if any(not isinstance(n, int) or isinstance(n, bool)
            for n in (closed, coverage, signals)):
         return "MISSING_COUNTERS"
+    if any(n < 0 for n in (closed, coverage, signals)) or coverage > closed:
+        return "INVALID_HISTORY_COUNTERS"
     if closed != stats["closed"] or coverage != stats["coverage"] or signals != stats["signals"]:
         return "COUNTER_MISMATCH"
     observed = as_number(history.get("net_pnl"))
