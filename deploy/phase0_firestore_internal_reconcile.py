@@ -79,8 +79,14 @@ def compare_latest(latest, historical):
 def compare_evaluation(report, days):
     if not days:
         return "NO_HISTORY_FOR_DATE"
-    closed = sum(x["closed_trades"] for x in days if isinstance(x.get("closed_trades"), int))
-    coverage = sum(x["pnl_coverage"] for x in days if isinstance(x.get("pnl_coverage"), int))
+    for row in days:
+        if any(not isinstance(row.get(key), int) or isinstance(row.get(key), bool)
+               or row[key] < 0 for key in ("closed_trades", "pnl_coverage")):
+            return "EVALUATION_INVALID_HISTORY_COUNTERS"
+        if row["pnl_coverage"] > row["closed_trades"]:
+            return "EVALUATION_INVALID_HISTORY_COVERAGE"
+    closed = sum(x["closed_trades"] for x in days)
+    coverage = sum(x["pnl_coverage"] for x in days)
     if not comparable(report.get("closed_trades"), closed) or not comparable(report.get("verified_pnl_trades"), coverage):
         return "EVALUATION_COUNTER_MISMATCH"
     if coverage < closed:
@@ -139,6 +145,13 @@ def main():
     try:
         docs = firestore_get_collections()
         history = [r for _, r in docs["paper_history"] if r.get("data_type") == "PAPER_SIMULATION"]
+        from deploy.phase0_duplicate_provenance import classify_history_groups
+        duplicate_audit = classify_history_groups(history)
+        if duplicate_audit["duplicate_groups"]:
+            print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=DUPLICATE_HISTORY_KEYS"
+                  " duplicate_groups=" + str(duplicate_audit["duplicate_groups"])
+                  + " (session identity/termination unverified)", flush=True)
+            return 4
         by_key = {}
         for row in history:
             k = (row.get("date_ist"), row.get("market"))
