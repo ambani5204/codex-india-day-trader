@@ -9,7 +9,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 def fixture(**kwargs):
     d = {"session_id": "synthetic-s1", "attempt_id": "synthetic-a1",
-         "data_type": "PAPER_SIMULATION", "workflow_conclusion": "success",
+         "data_type": "PAPER_SIMULATION", "trading_date_ist": "2026-11-23", "workflow_conclusion": "success",
          "worker_exit_reason": "SCHEDULED_MARKET_CLOSE",
          "worker_started_at": dt.datetime(2026, 11, 23, 9, 15, tzinfo=IST),
          "worker_ended_at": dt.datetime(2026, 11, 23, 15, 30, tzinfo=IST),
@@ -21,6 +21,12 @@ def fixture(**kwargs):
 class TerminationEvidencePreflightTests(unittest.TestCase):
     def test_complete_is_only_eligible_for_further_acceptance(self):
         self.assertEqual(assess_termination(fixture()), "ELIGIBLE_FOR_INDEPENDENT_ACCEPTANCE")
+
+    def test_missing_or_mismatched_trading_date_blocks(self):
+        self.assertEqual(assess_termination(fixture(trading_date_ist=None)),
+                         "BLOCKED_TRADING_DATE_LINEAGE")
+        self.assertEqual(assess_termination(fixture(trading_date_ist="2026-11-24")),
+                         "BLOCKED_TRADING_DATE_LINEAGE")
 
     def test_ci_success_does_not_prove_worker_exit(self):
         self.assertEqual(assess_termination(fixture(worker_exit_reason=None)),
