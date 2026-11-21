@@ -97,6 +97,21 @@ def duplicate_history_keys(rows):
     return duplicates
 
 
+def duplicate_history_metadata(rows):
+    """Aggregate document identity diagnostics without exposing identifiers."""
+    groups = defaultdict(list)
+    for row in rows:
+        groups[(str(row["date_ist"]), row["market"])].append(row.get("_document_name"))
+    duplicates = [names for names in groups.values() if len(names) > 1]
+    return {
+        "groups": len(duplicates),
+        "rows": sum(map(len, duplicates)),
+        "missing_names": sum(not isinstance(n, str) or not n
+                             for names in duplicates for n in names),
+        "repeated_names": sum(len(names) - len(set(names)) for names in duplicates),
+    }
+
+
 def gh_get(token, path):
     if not path.startswith("/") or ".." in path or "?" in path:
         raise ValueError("Unsafe GitHub path")
@@ -166,8 +181,11 @@ def get_history():
         response = session.get(base, params=params, timeout=25)
         response.raise_for_status()
         data = response.json()
-        rows.extend({k: unpack(v) for k, v in entry.get("fields", {}).items()}
-                    for entry in data.get("documents", []))
+        for entry in data.get("documents", []):
+            row = {k: unpack(v) for k, v in entry.get("fields", {}).items()}
+            # Internal provenance only; never log names, trades or financial values.
+            row["_document_name"] = entry.get("name")
+            rows.append(row)
         next_token = data.get("nextPageToken")
         pages += 1
         if not next_token:
@@ -191,7 +209,11 @@ def main():
         rows = get_history()
         targets = [r for r in rows if r.get("market") in MARKETS and r.get("date_ist")]
         if duplicate_history_keys(targets):
-            print("PHASE0_RECONCILIATION=BLOCKED reason=DUPLICATE_HISTORY_KEYS", flush=True)
+            meta = duplicate_history_metadata(targets)
+            print("PHASE0_RECONCILIATION=BLOCKED reason=DUPLICATE_HISTORY_KEYS " +
+                  "groups=" + str(meta["groups"]) + " rows=" + str(meta["rows"]) +
+                  " missing_names=" + str(meta["missing_names"]) +
+                  " repeated_names=" + str(meta["repeated_names"]), flush=True)
             return 4
         stage = "ARCHIVE_READ"
         archives = {date: load_archives(token, date)
