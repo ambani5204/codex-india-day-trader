@@ -43,6 +43,12 @@ class SessionLineageDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["same_run_groups"], 1)
         self.assertEqual(result["status"], "BLOCKED_LINEAGE_UNVERIFIED")
 
+    def test_whitespace_variants_are_same_claimed_run_not_distinct(self):
+        result = classify_market_date_lineage([row("run-A"), row(" run-A ")])
+        self.assertEqual(result["status"], "BLOCKED_LINEAGE_UNVERIFIED")
+        self.assertEqual(result["same_run_groups"], 1)
+        self.assertEqual(result["different_run_groups"], 0)
+
     def test_missing_run_id_stays_blocked(self):
         result = classify_market_date_lineage([row("synthetic-a"), row(None)])
         self.assertEqual(result["missing_run_groups"], 1)
