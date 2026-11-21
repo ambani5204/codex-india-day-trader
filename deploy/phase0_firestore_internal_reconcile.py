@@ -147,6 +147,9 @@ def main():
         history = [r for _, r in docs["paper_history"] if r.get("data_type") == "PAPER_SIMULATION"]
         from deploy.phase0_duplicate_provenance import classify_history_groups
         duplicate_audit = classify_history_groups(history)
+        if duplicate_audit.get("status"):
+            print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=" + duplicate_audit["status"], flush=True)
+            return 4
         if duplicate_audit["duplicate_groups"]:
             print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=DUPLICATE_HISTORY_KEYS"
                   " duplicate_groups=" + str(duplicate_audit["duplicate_groups"])
@@ -155,6 +158,9 @@ def main():
         by_key = {}
         for row in history:
             k = (row.get("date_ist"), row.get("market"))
+            if not isinstance(k[0], str) or not k[0] or k[1] not in {"NIFTY", "SENSEX"}:
+                print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=INVALID_HISTORY_KEY", flush=True)
+                return 4
             current = by_key.get(k)
             if current is None or str(row.get("updated_at") or "") > str(current.get("updated_at") or ""):
                 by_key[k] = row
