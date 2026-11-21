@@ -78,6 +78,8 @@ def check_match(history, events, file_count):
     # Require at least one summary, but do not treat it as proof of correct shutdown.
     if stats["summaries"] == 0:
         return "MISSING_SESSION_SUMMARY"
+    if stats["summaries"] > 1:
+        return "AMBIGUOUS_SESSION_SUMMARIES"
     return "COUNTS_MATCH_SESSION_TERMINATION_UNVERIFIED"
 
 
