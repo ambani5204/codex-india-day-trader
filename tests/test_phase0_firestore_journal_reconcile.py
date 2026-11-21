@@ -79,6 +79,22 @@ class FirestoreArchiveReconcileTests(unittest.TestCase):
         self.assertEqual(reconcile.duplicate_history_metadata(rows),
                          {"groups": 1, "rows": 3, "missing_names": 1, "repeated_names": 1})
 
+    def test_distinct_session_ids_do_not_bypass_market_date_ambiguity(self):
+        # Session IDs are untrusted until cross-source provenance is established.
+        rows = [
+            {"date_ist": "2026-11-19", "market": "NIFTY",
+             "session_id": "private-session-a", "_document_name": "private-doc-a"},
+            {"date_ist": "2026-11-19", "market": "NIFTY",
+             "session_id": "private-session-b", "_document_name": "private-doc-b"},
+        ]
+        self.assertEqual(reconcile.duplicate_history_keys(rows),
+                         {("2026-11-19", "NIFTY")})
+        diagnostic = reconcile.duplicate_history_metadata(rows)
+        self.assertEqual(diagnostic,
+                         {"groups": 1, "rows": 2, "missing_names": 0, "repeated_names": 0})
+        self.assertNotIn("private-session", str(diagnostic))
+        self.assertNotIn("private-doc", str(diagnostic))
+
     def test_archive_http404_is_not_silently_treated_as_empty(self):
         error = urllib.error.HTTPError("https://api.github.com/example", 404, "Not Found", {}, None)
         with patch.object(reconcile, "gh_get", side_effect=error):
