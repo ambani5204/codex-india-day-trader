@@ -29,6 +29,12 @@ EVENTS = [
 
 
 class FirestoreArchiveReconcileTests(unittest.TestCase):
+    def test_duplicate_session_summaries_fail_closed(self):
+        duplicated = EVENTS + [{"event": "SESSION_SUMMARY"}]
+        self.assertEqual(check_match(row(), duplicated, 1),
+                         "AMBIGUOUS_SESSION_SUMMARIES")
+
+
     def test_duplicate_history_date_market_is_blocked(self):
         rows = [
             {"date_ist": "2026-11-19", "market": "NIFTY"},
