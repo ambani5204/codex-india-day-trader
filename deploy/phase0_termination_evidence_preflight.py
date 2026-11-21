@@ -22,6 +22,9 @@ def assess_termination(record):
     if started.tzinfo is None or ended.tzinfo is None or ended <= started:
         return "BLOCKED_INVALID_WORKER_TIMESTAMPS"
     local_start, local_end = started.astimezone(IST), ended.astimezone(IST)
+    trading_date = record.get("trading_date_ist")
+    if not isinstance(trading_date, str) or trading_date != local_start.date().isoformat():
+        return "BLOCKED_TRADING_DATE_LINEAGE"
     if local_start.date() != local_end.date():
         return "BLOCKED_CROSS_DATE_REQUIRES_REVIEW"
     if local_end.time() < dt.time(15, 30):
