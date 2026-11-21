@@ -67,6 +67,14 @@ def validate_day(row):
     return "MATCH"
 
 
+def valid_history_key(row):
+    """Reject unknown market or missing day; never invent a grouping key."""
+    return (isinstance(row, dict)
+            and isinstance(row.get("date_ist"), str)
+            and bool(row["date_ist"].strip())
+            and row.get("market") in {"NIFTY", "SENSEX"})
+
+
 def compare_latest(latest, historical):
     for key in ("date_ist", "market", "run_id", "closed_trades",
                 "pnl_coverage", "signals_count", "entry_event_count",
@@ -158,7 +166,7 @@ def main():
         by_key = {}
         for row in history:
             k = (row.get("date_ist"), row.get("market"))
-            if not isinstance(k[0], str) or not k[0] or k[1] not in {"NIFTY", "SENSEX"}:
+            if not valid_history_key(row):
                 print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=INVALID_HISTORY_KEY", flush=True)
                 return 4
             current = by_key.get(k)
