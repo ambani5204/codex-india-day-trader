@@ -48,7 +48,7 @@ def classify_market_date_lineage(rows):
         if len(group) < 2:
             continue
         counters["ambiguous_groups"] += 1
-        ids = [r.get("run_id") for r in group]
+        ids = [r.get("run_id").strip() if _usable(r.get("run_id")) else None for r in group]
         if any(not _usable(v) for v in ids):
             counters["missing_run_groups"] += 1
         elif len(set(ids)) == len(ids):
