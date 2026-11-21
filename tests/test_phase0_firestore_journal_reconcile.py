@@ -60,6 +60,25 @@ class FirestoreArchiveReconcileTests(unittest.TestCase):
         self.assertEqual(reconcile.duplicate_history_keys(rows), set())
 
 
+    def test_duplicate_metadata_counts_without_exposing_ids(self):
+        rows = [
+            {"date_ist": "2026-11-19", "market": "NIFTY", "_document_name": "secret-doc-a"},
+            {"date_ist": "2026-11-19", "market": "NIFTY", "_document_name": "secret-doc-b"},
+            {"date_ist": "2026-11-18", "market": "SENSEX", "_document_name": "other"},
+        ]
+        self.assertEqual(reconcile.duplicate_history_metadata(rows),
+                         {"groups": 1, "rows": 2, "missing_names": 0, "repeated_names": 0})
+        self.assertNotIn("secret-doc", str(reconcile.duplicate_history_metadata(rows)))
+
+    def test_duplicate_metadata_detects_missing_and_repeated_identity(self):
+        rows = [
+            {"date_ist": "2026-11-19", "market": "NIFTY", "_document_name": "same"},
+            {"date_ist": "2026-11-19", "market": "NIFTY", "_document_name": "same"},
+            {"date_ist": "2026-11-19", "market": "NIFTY"},
+        ]
+        self.assertEqual(reconcile.duplicate_history_metadata(rows),
+                         {"groups": 1, "rows": 3, "missing_names": 1, "repeated_names": 1})
+
     def test_archive_http404_is_not_silently_treated_as_empty(self):
         error = urllib.error.HTTPError("https://api.github.com/example", 404, "Not Found", {}, None)
         with patch.object(reconcile, "gh_get", side_effect=error):
