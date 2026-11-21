@@ -69,6 +69,18 @@ class FirestoreInternalReconcileTests(unittest.TestCase):
         self.assertEqual(compare_evaluation(report, [snapshot(), unknown]),
                          "EVALUATION_PARTIAL_FINANCIAL_COVERAGE")
 
+    def test_evaluation_rejects_boolean_counter_instead_of_counting_true(self):
+        report = {"closed_trades": 1, "verified_pnl_trades": 1, "net_pnl": -12.0}
+        self.assertEqual(compare_evaluation(report, [snapshot(closed_trades=True)]),
+                         "EVALUATION_INVALID_HISTORY_COUNTERS")
+
+    def test_evaluation_rejects_negative_and_excess_coverage(self):
+        report = {"closed_trades": 1, "verified_pnl_trades": 1, "net_pnl": -12.0}
+        self.assertEqual(compare_evaluation(report, [snapshot(closed_trades=-1)]),
+                         "EVALUATION_INVALID_HISTORY_COUNTERS")
+        self.assertEqual(compare_evaluation(report, [snapshot(pnl_coverage=2)]),
+                         "EVALUATION_INVALID_HISTORY_COVERAGE")
+
     def test_empty_date_is_not_healthy(self):
         self.assertEqual(compare_evaluation({}, []), "NO_HISTORY_FOR_DATE")
 
