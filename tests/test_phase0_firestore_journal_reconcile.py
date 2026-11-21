@@ -29,6 +29,14 @@ EVENTS = [
 
 
 class FirestoreArchiveReconcileTests(unittest.TestCase):
+    def test_negative_history_counter_fails_closed(self):
+        self.assertEqual(check_match(row(signals_count=-1), EVENTS, 1),
+                         "INVALID_HISTORY_COUNTERS")
+
+    def test_coverage_cannot_exceed_closed_trades(self):
+        self.assertEqual(check_match(row(pnl_coverage=2), EVENTS, 1),
+                         "INVALID_HISTORY_COUNTERS")
+
     def test_duplicate_session_summaries_fail_closed(self):
         duplicated = EVENTS + [{"event": "SESSION_SUMMARY"}]
         self.assertEqual(check_match(row(), duplicated, 1),
