@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate contract and execute only if explicitly authorized
         env:
-          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_REAL_APP_TOKEN }}
           UPSTOX_INSTRUMENT_KEY: ${{ vars.UPSTOX_NIFTY_27550_CE_20261123_KEY }}
           ORDER_QUANTITY: '65'
           ORDER_LIMIT_PRICE: '0.55'
