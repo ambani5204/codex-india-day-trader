@@ -5,6 +5,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import urllib.parse
 
 def main():
     key = os.environ.get("UPSTOX_INSTRUMENT_KEY", "").strip()
@@ -13,8 +14,31 @@ def main():
     price = float(os.environ.get("ORDER_LIMIT_PRICE", "0.55"))
     submit = os.environ.get("SUBMIT_REAL_ORDER", "false").lower() == "true"
     confirmation = os.environ.get("ORDER_CONFIRMATION", "")
-    if not key or qty <= 0 or price <= 0:
-        raise SystemExit("Missing instrument key or invalid quantity/price; no order sent")
+    if qty <= 0 or price <= 0:
+        raise SystemExit("Invalid quantity/price; no order sent")
+    if not token:
+        raise SystemExit("Missing UPSTOX_REAL_APP_TOKEN secret; no order sent")
+    url = "https://api.upstox.com/v2/option/contract?" + urllib.parse.urlencode({
+        "instrument_key": "NSE_INDEX|Nifty 50", "expiry_date": "2026-11-23"
+    })
+    request = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + token, "Accept": "application/json"
+    })
+    with urllib.request.urlopen(request, timeout=20) as response:
+        contracts = json.load(response).get("data", [])
+    matches = [c for c in contracts if
+        c.get("expiry") == "2026-11-23"
+        and c.get("instrument_type") == "CE"
+        and float(c.get("strike_price", 0)) == 27550
+        and int(c.get("lot_size", 0)) == 65
+        and str(c.get("instrument_key", "")).startswith("NSE_FO|")]
+    if len(matches) != 1:
+        raise SystemExit("Expected one matching Upstox option contract; no order sent")
+    discovered = matches[0]["instrument_key"]
+    if key and key != discovered:
+        raise SystemExit("Configured key mismatches contract lookup; no order sent")
+    key = discovered
+    print("Verified contract:", matches[0].get("trading_symbol"), "lot:", matches[0]["lot_size"])
     if qty != 65 or price != 0.55:
         raise SystemExit("This test is locked to 65 quantity and 0.55 limit; no order sent")
     payload = {
