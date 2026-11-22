@@ -1,0 +1,33 @@
+name: Upstox contract lookup DRY RUN (no orders)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Query Upstox option contract API (GET only)
+        env:
+          UPSTOX_REAL_APP_TOKEN: ${{ secrets.UPSTOX_REAL_APP_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.parse
+          token=os.environ.get("UPSTOX_REAL_APP_TOKEN", "")
+          if not token: raise SystemExit("Missing UPSTOX_REAL_APP_TOKEN GitHub secret")
+          query=urllib.parse.urlencode({"instrument_key":"NSE_INDEX|Nifty 50","expiry_date":"2026-11-23"})
+          request=urllib.request.Request("https://api.upstox.com/v2/option/contract?"+query,headers={"Authorization":"Bearer "+token,"Accept":"application/json"})
+          try:
+              with urllib.request.urlopen(request,timeout=20) as response: data=json.load(response)
+          except Exception as exc:
+              raise SystemExit("Upstox GET lookup failed: "+str(exc))
+          contracts=data.get("data",[])
+          matches=[c for c in contracts if str(c.get("expiry"))=="2026-11-23" and c.get("instrument_type")=="CE" and float(c.get("strike_price",0))==27550 and int(c.get("lot_size",0))==65]
+          if len(matches)!=1: raise SystemExit("No unique matching contract; no orders sent. Returned contracts: "+str(len(contracts)))
+          c=matches[0]
+          print("DRY RUN ONLY: matched NIFTY 27550 CE 2026-11-23; quantity 65; limit ₹0.55")
+          print("Instrument key:",c.get("instrument_key"))
+          print("Trading symbol:",c.get("trading_symbol"))
+          print("No POST, no real order submitted.")
+          PY
