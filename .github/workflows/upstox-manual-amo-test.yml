@@ -1,0 +1,34 @@
+name: Manual Upstox AMO API test (REAL ORDER)
+on:
+  workflow_dispatch:
+    inputs:
+      submit_real_order:
+        description: 'Submit real BUY LIMIT order (false = dry run)'
+        required: true
+        type: boolean
+        default: false
+      confirmation:
+        description: 'For live order type PLACE_REAL_ORDER_27550_CE_65_055'
+        required: false
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: upstox-manual-amo-real-order
+  cancel-in-progress: false
+jobs:
+  order-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate contract and execute only if explicitly authorized
+        env:
+          UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+          UPSTOX_INSTRUMENT_KEY: ${{ vars.UPSTOX_NIFTY_27550_CE_20261123_KEY }}
+          ORDER_QUANTITY: '65'
+          ORDER_LIMIT_PRICE: '0.55'
+          SUBMIT_REAL_ORDER: ${{ inputs.submit_real_order }}
+          ORDER_CONFIRMATION: ${{ inputs.confirmation }}
+        run: python3 tools/upstox_manual_amo_test.py
