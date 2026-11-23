@@ -30,6 +30,18 @@ def completed_run_executed_session(repo: str, run_id: int, token: str) -> bool:
     return False
 
 
+def prior_run_blocks_new_session(run: dict, repo: str, token: str) -> bool:
+    """No retry after a real worker attempt until durable resume is verified.
+
+    Earlier attempts that never ran the market-session step may be retried.
+    A failed/cancelled market worker can have durable private paper fills; a
+    green GitHub workflow is likewise not evidence of terminal reconciliation.
+    """
+    if run.get("status") != "completed":
+        return True
+    return completed_run_executed_session(repo, int(run["id"]), token)
+
+
 def main():
     repo = os.environ["GITHUB_REPOSITORY"]
     run_id = int(os.environ["GITHUB_RUN_ID"])
@@ -61,13 +73,11 @@ def main():
         if created.date() != now.date() or not dt.time(8, 45) <= created.time() < dt.time(15, 25):
             continue
         # Pre-market launches must also block later retry launches.
-        # Only retry a failed/cancelled session; an active or completed
-        # session owns the market day and must not be duplicated.
+        # An attempted session may have persisted fills even when GitHub reports
+        # failure/cancellation; do NOT retry until durable recovery is proven.
         if int(run["id"]) >= run_id:
             continue
-        if run.get("status") != "completed":
-            competing.append(run["id"])
-        elif run.get("conclusion") == "success" and completed_run_executed_session(repo, int(run["id"]), token):
+        if prior_run_blocks_new_session(run, repo, token):
             competing.append(run["id"])
     should_run = not competing
     output = os.environ.get("GITHUB_OUTPUT")

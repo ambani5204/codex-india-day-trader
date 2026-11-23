@@ -59,6 +59,27 @@ class LivePaperContract(TestCase):
             response["jobs"][0]["steps"][1]["conclusion"]="success"
             self.assertTrue(gate.completed_run_executed_session("owner/repo",123,"token"))
 
+    def test_failed_or_cancelled_executed_worker_is_not_auto_retried(self):
+        for conclusion in ("failure", "cancelled", "success"):
+            with self.subTest(conclusion=conclusion):
+                previous = {"id": 12, "status": "completed", "conclusion": conclusion}
+                with patch.object(gate, "completed_run_executed_session", return_value=True) as executed:
+                    self.assertTrue(gate.prior_run_blocks_new_session(previous, "owner/repo", "test"))
+                    executed.assert_called_once_with("owner/repo", 12, "test")
+
+    def test_gate_only_or_startup_failed_run_may_retry(self):
+        for conclusion in ("success", "failure", "cancelled"):
+            with self.subTest(conclusion=conclusion):
+                previous = {"id": 12, "status": "completed", "conclusion": conclusion}
+                with patch.object(gate, "completed_run_executed_session", return_value=False):
+                    self.assertFalse(gate.prior_run_blocks_new_session(previous, "owner/repo", "test"))
+
+    def test_active_previous_run_blocks_without_remote_lookup(self):
+        with patch.object(gate, "completed_run_executed_session",
+                          side_effect=AssertionError("premature lookup")):
+            self.assertTrue(gate.prior_run_blocks_new_session(
+                {"id": 12, "status": "in_progress"}, "owner/repo", "test"))
+
     def test_gate_time_contract(self):
         source=(ROOT/"deploy/cloud_session_gate.py").read_text()
         self.assertIn("dt.time(15, 25)",source)
