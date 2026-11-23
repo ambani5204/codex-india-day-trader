@@ -1,67 +1,15 @@
-name: Phase 0 one-time backed-up paper-history cleanup
+# CHG-20261123-A2-1757: emergency fail-closed quarantine.
+# Historical workflow previously ran on push and automatically performed DELETE.
+# No cleanup execution is authorized until independently verified backup,
+# restoration rehearsal, exact date/document approval, and a separate reviewed PR.
+name: Phase 0 destructive cleanup QUARANTINED
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/phase0-backed-up-cleanup.yml
-      - deploy/phase0_backed_up_cleanup.py
   workflow_dispatch:
 permissions:
   contents: read
-  actions: write
 jobs:
-  backup:
+  quarantine:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: python -m pip install -q google-auth requests
-      - name: Identify duplicate dates and back up affected Firestore documents
-        env:
-          FIREBASE_PROJECT_ID: stock-market-c5016
-          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
-        run: python -m deploy.phase0_backed_up_cleanup plan
-      - uses: actions/upload-artifact@v4
-        with:
-          name: phase0-private-firestore-backup
-          path: |
-            phase0_cleanup_backup.json
-            phase0_cleanup_digest.txt
-          retention-days: 90
-          if-no-files-found: error
-  delete-backed-up-records:
-    needs: backup
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: python -m pip install -q google-auth requests
-      - uses: actions/download-artifact@v4
-        with:
-          name: phase0-private-firestore-backup
-      - name: Delete only unchanged, backed-up paper records
-        env:
-          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
-        run: python -m deploy.phase0_backed_up_cleanup apply
-  verify-reconciliation:
-    needs: delete-backed-up-records
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: python -m pip install -q google-auth requests
-      - name: Verify post-cleanup journal and Firestore consistency (GET only)
-        env:
-          FIREBASE_PROJECT_ID: stock-market-c5016
-          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
-          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
-        run: python -m deploy.phase0_firestore_journal_reconcile
+      - run: echo 'Destructive cleanup is disabled; no Firestore credentials loaded.'

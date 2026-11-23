@@ -89,33 +89,14 @@ def plan():
 
 
 def apply():
-    if not BACKUP.exists():
-        raise RuntimeError("Backup artifact missing")
-    expected = pathlib.Path("phase0_cleanup_digest.txt").read_text().strip()
-    if hashlib.sha256(BACKUP.read_bytes()).hexdigest() != expected:
-        raise RuntimeError("Backup integrity mismatch")
-    payload = json.loads(BACKUP.read_text())
-    if payload["project"] != PROJECT:
-        raise RuntimeError("Backup project mismatch")
-    session = client()
-    count = 0
-    for collection, docs in payload["records"].items():
-        if collection not in COLLECTIONS:
-            raise RuntimeError("Unexpected collection")
-        for doc in docs:
-            name = doc["name"]
-            if not name.startswith(BASE.removeprefix("https://firestore.googleapis.com/v1/") + "/" + collection + "/"):
-                raise RuntimeError("Unexpected document path")
-            # Only delete the exact backed-up document version. Never delete if
-            # another writer changed it after backup.
-            params = {"currentDocument.updateTime": doc["updateTime"]}
-            response = session.delete("https://firestore.googleapis.com/v1/" + name,
-                                      params=params, timeout=30)
-            response.raise_for_status()
-            count += 1
-    print("CLEANUP_DELETED documents=" + str(count) + " dates=" +
-          str(len(payload["dates"])), flush=True)
-    return 0
+    """Fail closed: no DELETE permitted under the current Phase 0 policy.
+
+    Re-enabling cleanup requires a separately reviewed change with explicit
+    authorization, verified offsite backup, tested restore, and per-document
+    preconditions. This function intentionally does not load credentials.
+    """
+    print("CLEANUP_ABORT reason=DESTRUCTIVE_APPLY_DISABLED", flush=True)
+    return 4
 
 
 if __name__ == "__main__":
