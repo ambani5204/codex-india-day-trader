@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/phase0-backed-up-cleanup.yml
+      - deploy/phase0_backed_up_cleanup.py
   workflow_dispatch:
 permissions:
   contents: read
