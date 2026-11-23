@@ -27,7 +27,7 @@ class Reply:
 class InMemoryFirestore:
     """Emulates Firestore's atomic currentDocument preconditions, never network."""
     def __init__(self):
-        self.doc = None
+        self.docs = {}
         self.counter = 0
         self.lock = threading.Lock()
         self.write_count = 0
@@ -38,11 +38,8 @@ class InMemoryFirestore:
         self.check_url(url)
         self.assert_timeout(timeout)
         with self.lock:
-            if self.doc is None:
-                return Reply(404)
-            if url != "https://firestore.googleapis.com/v1/" + self.doc["name"]:
-                return Reply(404)
-            return Reply(200, self.doc)
+            doc = self.docs.get(url.split("https://firestore.googleapis.com/v1/", 1)[1])
+            return Reply(200, doc) if doc is not None else Reply(404)
 
     def post(self, url, json, timeout):
         if url != lease.API_ROOT + "/documents:commit" or timeout != 25:
@@ -58,19 +55,21 @@ class InMemoryFirestore:
             hook(self)
         write = writes[0]
         with self.lock:
+            name = write["update"]["name"]
+            existing = self.docs.get(name)
             condition = write.get("currentDocument")
             if condition == {"exists": False}:
-                if self.doc is not None:
+                if existing is not None:
                     return Reply(409)
             elif set(condition or {}) == {"updateTime"}:
-                if self.doc is None or self.doc.get("updateTime") != condition["updateTime"]:
+                if existing is None or existing.get("updateTime") != condition["updateTime"]:
                     return Reply(409)
             else:
                 raise AssertionError("Unconditional write was attempted")
             self.counter += 1
             timestamp = "2026-11-23T04:30:%02d.000000Z" % self.counter
-            self.doc = copy.deepcopy(write["update"])
-            self.doc["updateTime"] = timestamp
+            self.docs[name] = copy.deepcopy(write["update"])
+            self.docs[name]["updateTime"] = timestamp
             self.write_count += 1
             if self.malformed_ack:
                 return Reply(200, {"writeResults": [{}]})
@@ -116,12 +115,20 @@ class SessionLeaseTests(unittest.TestCase):
             self.acquire("run-200", "strategy_v2")
         self.assertEqual(lease.inspect(self.db, DAY, "NIFTY"), current)
 
-    def test_canonical_keys_are_distinct_between_markets(self):
-        nifty = lease.document_name(DAY, "NIFTY")
-        sensex = lease.document_name(DAY, "SENSEX")
-        self.assertNotEqual(nifty, sensex)
-        self.assertTrue(nifty.endswith("_NIFTY"))
-        self.assertTrue(sensex.endswith("_SENSEX"))
+    def test_concurrent_market_partitions_have_independent_owners(self):
+        nifty = self.acquire("run-nifty")
+        sensex = lease.acquire(self.db, DAY, "SENSEX", "run-sensex", "v1", now=NOW)
+        self.assertNotEqual(lease.document_name(DAY, "NIFTY"),
+                            lease.document_name(DAY, "SENSEX"))
+        self.assertEqual(self.db.write_count, 2)
+        self.assertEqual(lease.inspect(self.db, DAY, "NIFTY"), nifty)
+        self.assertEqual(lease.inspect(self.db, DAY, "SENSEX"), sensex)
+        with self.assertRaisesRegex(lease.LeaseBlocked, "CAS_CONFLICT"):
+            self.acquire("run-another-nifty")
+        renewed_sensex = lease.heartbeat(
+            self.db, sensex, now=NOW + dt.timedelta(seconds=15))
+        self.assertNotEqual(renewed_sensex.update_time, sensex.update_time)
+        self.assertEqual(lease.inspect(self.db, DAY, "NIFTY"), nifty)
 
     def test_only_current_owner_can_renew_with_cas(self):
         first = self.acquire()
@@ -148,7 +155,7 @@ class SessionLeaseTests(unittest.TestCase):
         def unrelated_writer(db):
             # Simulates a competing writer modifying the same exact doc after GET.
             db.counter += 1
-            db.doc["updateTime"] = "2026-11-23T04:30:55.000000Z"
+            db.docs[lease.document_name(DAY, "NIFTY")]["updateTime"] = "2026-11-23T04:30:55.000000Z"
         self.db.before_commit = unrelated_writer
         with self.assertRaisesRegex(lease.LeaseBlocked, "CAS_CONFLICT"):
             lease.heartbeat(self.db, first, now=NOW + dt.timedelta(seconds=10))
@@ -173,7 +180,7 @@ class SessionLeaseTests(unittest.TestCase):
 
     def test_malformed_remote_metadata_blocks_renew(self):
         item = self.acquire()
-        self.db.doc["fields"]["owner_attempt_id"] = {"integerValue": "10"}
+        self.db.docs[lease.document_name(DAY, "NIFTY")]["fields"]["owner_attempt_id"] = {"integerValue": "10"}
         with self.assertRaises(lease.LeaseBlocked):
             lease.heartbeat(self.db, item, now=NOW + dt.timedelta(seconds=10))
         self.assertEqual(self.db.write_count, 1)
