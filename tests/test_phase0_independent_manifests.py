@@ -23,6 +23,6 @@ class IndependentManifestTests(unittest.TestCase):
     def test_event_mismatch(self):
         self.assertEqual(audit(J, J, [S], [dict(S,event_id="other")])["reason"], "EVENT_OR_ACCOUNTING_MISMATCH")
     def test_no_private_ids_in_result(self):
-        self.assertNotIn("s", str(audit(J, [dict(J[0], strategy="EMA")], [S], [S])))
+        self.assertNotIn("2026-11-19T09:15:00+05:30", str(audit(J, [dict(J[0], strategy="EMA")], [S], [S])))
 if __name__ == "__main__":
     unittest.main()
