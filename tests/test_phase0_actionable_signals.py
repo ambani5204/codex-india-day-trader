@@ -89,7 +89,23 @@ class ActionableSignalContractTests(unittest.TestCase):
         result = journal_snapshot([self.index, credit, dict(credit)])
         self.assertEqual(result["index_candidates_count"], 1)
         self.assertEqual(result["signals_count"], 1)
-        self.assertEqual(result["entry_event_count"], 2)  # Raw duplicate fill remains an integrity incident.
+        self.assertIsNone(result["entry_event_count"])
+        self.assertEqual(result["entry_identity_status"], "DUPLICATE_FILL_IDENTITY")
+
+    def test_valid_option_fill_is_counted_once_without_fabricating_exit(self):
+        fill = {"event": "PAPER_BUY_FILLED", "session": "s1",
+                "timestamp": T, "symbol": long_contract()["symbol"]}
+        result = journal_snapshot([self.index, self.selection, self.intent, fill])
+        self.assertEqual(result["signals_count"], 1)
+        self.assertEqual(result["entry_event_count"], 1)
+        self.assertEqual(result["entry_identity_status"], "PROVISIONAL_LEGACY_TIMESTAMP_ID")
+        self.assertEqual(result["closed_trades"], 0)
+        self.assertIsNone(result["net_pnl"])
+
+    def test_unidentifiable_entry_is_unknown_not_zero_or_one(self):
+        result = journal_snapshot([{"event": "PAPER_BUY_FILLED", "timestamp": T}])
+        self.assertIsNone(result["entry_event_count"])
+        self.assertEqual(result["entry_identity_status"], "MISSING_FILL_IDENTITY")
 
     def test_naked_or_missing_hedge_credit_not_qualified(self):
         credit = {
