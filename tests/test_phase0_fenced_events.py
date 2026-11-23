@@ -204,6 +204,44 @@ class FencedPaperEventTests(unittest.TestCase):
             self.commit()
         self.assertEqual(self.db.writes, 3)
 
+    def test_get_only_recovery_proves_original_event_after_lost_ack(self):
+        original = sample_event()
+        self.db.ack_lost = True
+        with self.assertRaisesRegex(lease.LeaseUnavailable, "FENCED_EVENT_COMMIT_UNKNOWN"):
+            self.commit(original)
+        self.db.ack_lost = False
+        self.assertEqual(writer.verify_persisted_event(self.db, self.current, original),
+                         "EVENT_PERSISTED_EXACT_MATCH")
+        self.assertEqual(self.db.writes, 3)  # GET cannot publish a second fill.
+
+    def test_get_only_recovery_distinguishes_missing_from_success(self):
+        result = writer.verify_persisted_event(self.db, self.current, sample_event())
+        self.assertEqual(result, "EVENT_ABSENT_UNVERIFIED")
+        self.assertEqual(self.db.writes, 1)
+
+    def test_get_only_recovery_rejects_conflicting_payload_identity(self):
+        self.commit()
+        altered = sample_event(fill_price=999.0)
+        with self.assertRaisesRegex(writer.EventRejected, "EVENT_SOURCE_LINEAGE_OR_PAYLOAD_MISMATCH"):
+            writer.verify_persisted_event(self.db, self.current, altered)
+        self.assertEqual(self.db.writes, 3)
+
+    def test_get_only_recovery_rejects_malformed_document(self):
+        event = sample_event()
+        self.commit(event)
+        name = writer._event_name(event)
+        self.db.documents[name]["fields"].pop("owner_attempt_id")
+        with self.assertRaisesRegex(writer.EventRejected, "EVENT_SOURCE_LINEAGE_OR_PAYLOAD_MISMATCH"):
+            writer.verify_persisted_event(self.db, self.current, event)
+
+    def test_get_only_recovery_never_calls_write_on_read_failure(self):
+        class Offline:
+            def get(self, url, timeout):
+                raise ConnectionError("Synthetic outage")
+        with self.assertRaisesRegex(lease.LeaseUnavailable, "EVENT_READ_UNAVAILABLE"):
+            writer.verify_persisted_event(Offline(), self.current, sample_event())
+        self.assertEqual(self.db.writes, 1)
+
     def test_malformed_ack_cannot_be_reported_as_success(self):
         self.db.malformed_ack = True
         with self.assertRaisesRegex(lease.LeaseUnavailable,
