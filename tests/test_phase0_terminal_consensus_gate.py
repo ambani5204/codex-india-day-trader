@@ -2,7 +2,7 @@
 import datetime as dt
 import unittest
 from zoneinfo import ZoneInfo
-from tests.test_phase0_scheduled_close_clock_gate import fixture
+from test_phase0_scheduled_close_clock_gate import fixture
 from deploy.phase0_terminal_consensus_gate import assess_terminal_consensus
 
 IST = ZoneInfo("Asia/Kolkata")
