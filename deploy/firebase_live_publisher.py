@@ -79,6 +79,51 @@ def _actionable_paper_signals(records: list[dict]) -> list[dict]:
     return qualified
 
 
+def _entry_count_with_integrity(fills: list[dict]) -> tuple[int | None, str]:
+    """Unknown on duplicated or unidentifiable fills, never inflate entry KPIs.
+
+    Legacy timestamp keys are provisional; only producer-issued IDs can provide
+    cross-restart idempotency. This checks one journal snapshot, not Firestore.
+    """
+    if not fills:
+        return 0, "NO_FILL_EVENTS"
+    seen = set()
+    provisional = False
+    for event in fills:
+        session = event.get("session")
+        stamp = event.get("timestamp")
+        if (not isinstance(session, str) or not session
+                or not isinstance(stamp, str) or not stamp):
+            return None, "MISSING_FILL_IDENTITY"
+        kind = event.get("event")
+        if kind == "PAPER_BUY_FILLED":
+            symbol = event.get("symbol")
+            if not isinstance(symbol, str) or not symbol:
+                return None, "MISSING_FILL_CONTRACT"
+            instrument = (symbol,)
+        elif kind == "PAPER_SPREAD_OPEN":
+            contract = event.get("contract")
+            if not isinstance(contract, dict):
+                return None, "MISSING_FILL_CONTRACT"
+            short_key, long_key = contract.get("short_key"), contract.get("long_key")
+            if (not isinstance(short_key, str) or not short_key
+                    or not isinstance(long_key, str) or not long_key
+                    or short_key == long_key):
+                return None, "MISSING_FILL_HEDGE"
+            instrument = (short_key, long_key)
+        else:
+            return None, "UNKNOWN_FILL_EVENT"
+        event_id = event.get("event_id")
+        if not isinstance(event_id, str) or not event_id:
+            provisional = True
+            event_id = stamp
+        key = (session, kind, instrument, event_id)
+        if key in seen:
+            return None, "DUPLICATE_FILL_IDENTITY"
+        seen.add(key)
+    return len(fills), "PROVISIONAL_LEGACY_TIMESTAMP_ID" if provisional else "EVENT_IDS_PRESENT"
+
+
 def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> dict:
     today = day or dt.datetime.now(IST).date().isoformat()
     records = []
@@ -97,6 +142,7 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
     rejected = [e for e in records if e.get("event") in ("ENTRY_REJECTED", "SIGNAL_REJECTED", "STRUCTURE_REJECTED", "ENTRY_BLOCKED")]
     errors = [e for e in records if e.get("event") in ("MARKET_DATA_ERROR", "UNRESOLVED_POSITION")]
     fills = [e for e in records if e.get("event") in ("PAPER_BUY_FILLED", "PAPER_SPREAD_OPEN")]
+    entry_count, entry_integrity = _entry_count_with_integrity(fills)
     closed = [e for e in records if e.get("event") == "PAPER_TRADE_CLOSED"]
     index_candidates = [e for e in records if e.get("event") == "INDEX_SIGNAL"]
     actionable_signals = _actionable_paper_signals(records)
@@ -206,7 +252,8 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
         "index_candidates_count": len(index_candidates),
         "signal_contract_version": 2,
         "signal_qualification_basis": "VALIDATED_LONG_ENTRY_INTENT_OR_RISK_SIZED_CREDIT_PAPER_OPEN",
-        "entry_event_count": len(fills),
+        "entry_event_count": entry_count,
+        "entry_identity_status": entry_integrity,
         "closed_trades": len(closed),
         "net_pnl": net_pnl,
         "gross_pnl": gross_pnl,
