@@ -33,6 +33,21 @@ class TerminalConsensusTests(unittest.TestCase):
                 r["terminal_events"][0]["timestamp"] = stamp
                 self.assertEqual(assess_terminal_consensus(r), "BLOCKED_TERMINAL_TIMESTAMP")
 
+    def test_november_14_saturday_never_accepted(self):
+        # This is calendar-negative evidence, NOT producer provenance or a legacy label.
+        r = fixture(day=14)
+        self.assertEqual(assess_terminal_consensus(r), "BLOCKED_WEEKEND")
+
+    def test_spoofed_heartbeat_identity_blocks(self):
+        r = fixture()
+        r["heartbeats"][1]["attempt_id"] = "different-attempt"
+        self.assertEqual(assess_terminal_consensus(r), "BLOCKED_HEARTBEAT_IDENTITY")
+
+    def test_terminal_event_identity_mismatch_blocks(self):
+        r = fixture()
+        r["terminal_events"][0]["lease_id"] = "different-lease"
+        self.assertEqual(assess_terminal_consensus(r), "BLOCKED_TERMINAL_IDENTITY")
+
     def test_valid_still_unverified(self):
         self.assertEqual(assess_terminal_consensus(fixture()),
                          "ELIGIBLE_FOR_EXTERNAL_CALENDAR_AND_PROVENANCE_REVIEW")
