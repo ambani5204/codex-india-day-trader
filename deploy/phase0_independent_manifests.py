@@ -22,6 +22,9 @@ def audit_independent_manifests(journal_sessions, firestore_sessions, journal_ev
         keys = [(v[0], v[1]) for v in identities]
         if len(keys) != len(set(keys)):
             return None, source + "_AMBIGUOUS_SESSION"
+        run_ids = [v[1] for v in identities]
+        if len(run_ids) != len(set(run_ids)):
+            return None, source + "_REUSED_RUN_ID"
         return Counter(identities), None
 
     left, error = normalize(journal_sessions, "JOURNAL")
