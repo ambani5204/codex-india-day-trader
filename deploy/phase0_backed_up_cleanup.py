@@ -104,7 +104,7 @@ def apply():
             raise RuntimeError("Unexpected collection")
         for doc in docs:
             name = doc["name"]
-            if not name.startswith(BASE + "/" + collection + "/"):
+            if not name.startswith(BASE.removeprefix("https://firestore.googleapis.com/v1/") + "/" + collection + "/"):
                 raise RuntimeError("Unexpected document path")
             # Only delete the exact backed-up document version. Never delete if
             # another writer changed it after backup.
