@@ -79,6 +79,33 @@ def evaluate(rows, now=None, trading_date=None):
     }
 
 
+
+def authorized_trading_dates(raw):
+    """Fail closed unless an independently verified session-date allowlist is supplied.
+
+    The operator must source this allowlist from the authoritative NSE/BSE
+    calendar, including special sessions. Weekday alone is never authority.
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        raise RuntimeError("PAPER_TRADING_DATES_IST required: independent calendar not verified")
+    dates = raw.split(",")
+    if any(not d or d.strip() != d for d in dates) or len(set(dates)) != len(dates):
+        raise RuntimeError("Invalid or duplicate PAPER_TRADING_DATES_IST entries")
+    for value in dates:
+        try:
+            parsed = dt.date.fromisoformat(value)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("Invalid calendar date entry") from exc
+        if parsed.isoformat() != value:
+            raise RuntimeError("Calendar dates must be ISO YYYY-MM-DD")
+    return frozenset(dates)
+
+
+def require_authorized_date(value, allowed):
+    if not isinstance(value, str) or value not in allowed:
+        raise RuntimeError("Unverified exchange trading date; refusing evaluation publication")
+
+
 def firestore_field(value):
     if value is None:
         return {"nullValue": None}
@@ -127,6 +154,7 @@ def main():
         token = payload.get("nextPageToken", "")
         if not token:
             break
+    allowed_dates = authorized_trading_dates(os.environ.get("PAPER_TRADING_DATES_IST"))
     # Generate immutable date-scoped reports for every archived trading date.
     # This also repairs missed nightly runs without overwriting other dates.
     dates = sorted({str(r.get("date_ist")) for r in rows
@@ -139,6 +167,9 @@ def main():
         dates = [requested]
     if not dates:
         raise RuntimeError("No archived trading sessions found; cannot publish an empty nightly report")
+    # Validate the entire publication set before the first Firestore PATCH.
+    for trading_date in dates:
+        require_authorized_date(trading_date, allowed_dates)
     reports = []
     for trading_date in dates:
         report = evaluate(rows, trading_date=trading_date)
