@@ -11,9 +11,6 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 def assess_terminal_consensus(record):
-    baseline = assess_scheduled_close(record)
-    if baseline != "ELIGIBLE_FOR_EXTERNAL_CALENDAR_AND_PROVENANCE_REVIEW":
-        return baseline
     events = record.get("terminal_events")
     if not isinstance(events, list) or len(events) != 1:
         return "BLOCKED_TERMINAL_EVENT_CARDINALITY"
@@ -36,4 +33,6 @@ def assess_terminal_consensus(record):
         return "BLOCKED_TERMINAL_END_MISMATCH"
     if event.get("reason") != "SCHEDULED_MARKET_CLOSE":
         return "BLOCKED_TERMINAL_REASON"
-    return "ELIGIBLE_FOR_EXTERNAL_CALENDAR_AND_PROVENANCE_REVIEW"
+    # Run the pre-existing lineage and scheduled-close gates after structural
+    # consensus checks; never turn an invalid record into an accepted session.
+    return assess_scheduled_close(record)
