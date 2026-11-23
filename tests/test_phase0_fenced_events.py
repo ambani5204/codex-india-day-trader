@@ -261,6 +261,50 @@ class FencedPaperEventTests(unittest.TestCase):
         self.assertEqual(event_doc["fields"]["net_pnl"]["doubleValue"], 900.0)
         self.assertEqual(event_doc["fields"]["fees_total"]["doubleValue"], 75.0)
 
+    def test_orphan_close_is_rejected_without_creating_remote_event(self):
+        close = sample_event(
+            event_id="orphan-close", event_kind="PAPER_TRADE_CLOSED",
+            open_event_id="no-such-entry", gross_pnl=80.0,
+            fees_total=20.0, net_pnl=60.0)
+        with self.assertRaisesRegex(writer.EventRejected, "OPEN_EVENT_NOT_PERSISTED"):
+            self.commit(close)
+        self.assertEqual(self.db.writes, 1)
+
+    def test_close_foreign_key_must_match_owner_session_contract_and_quantity(self):
+        opened = sample_event()
+        self.current = self.commit(opened)
+        base = sample_event(
+            event_id="close-ok", event_kind="PAPER_TRADE_CLOSED",
+            open_event_id=opened.event_id, gross_pnl=80.0,
+            fees_total=20.0, net_pnl=60.0)
+        changes = [
+            {"session_id": "different-session"},
+            {"strategy_id": "EMA_8_21_CROSS"},
+            {"instrument_key": "NSE_FO|other-contract"},
+            {"quantity": 130},
+            {"option_type": "PE"},
+        ]
+        for change in changes:
+            with self.subTest(change=change):
+                with self.assertRaisesRegex(writer.EventRejected, "OPEN_EVENT_LINEAGE_MISMATCH"):
+                    self.commit(replace(base, **change), delta=10)
+        self.assertEqual(self.db.writes, 3)
+
+    def test_credit_spread_close_requires_same_hedge(self):
+        spread = sample_event(event_kind="PAPER_SPREAD_OPEN", option_type="PE",
+                              hedge_instrument_key="NSE_FO|67890")
+        self.current = self.commit(spread)
+        exit_event = sample_event(
+            event_id="spread-close-001", event_kind="PAPER_TRADE_CLOSED",
+            option_type="PE", open_event_id=spread.event_id,
+            hedge_instrument_key="NSE_FO|67890",
+            gross_pnl=120.0, fees_total=15.0, net_pnl=105.0)
+        with self.assertRaisesRegex(writer.EventRejected, "OPEN_EVENT_LINEAGE_MISMATCH"):
+            self.commit(replace(exit_event, hedge_instrument_key="NSE_FO|other"),
+                        delta=10)
+        self.current = self.commit(exit_event, delta=11)
+        self.assertEqual(self.db.writes, 5)
+
     def test_missing_or_inaccurate_financial_coverage_blocks_close(self):
         for overrides in (
             {"net_pnl": None},
