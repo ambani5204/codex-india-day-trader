@@ -9,6 +9,11 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 class TerminalConsensusTests(unittest.TestCase):
+    def test_malformed_input_fails_closed(self):
+        for bad in (None, [], "", 0):
+            with self.subTest(value=bad):
+                self.assertEqual(assess_terminal_consensus(bad), "BLOCKED_MALFORMED")
+
     def test_valid_still_unverified(self):
         self.assertEqual(assess_terminal_consensus(fixture()),
                          "ELIGIBLE_FOR_EXTERNAL_CALENDAR_AND_PROVENANCE_REVIEW")
