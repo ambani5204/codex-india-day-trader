@@ -1,0 +1,30 @@
+# CHG-20261123-2350: one-shot GET-only incident #58 verification.
+# No Firestore write endpoint is invoked. No trade values in logs/artifacts.
+name: P0 incident 58 Firestore metadata GET only
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/phase0-incident58-getonly.yml'
+      - 'deploy/phase0_incident58_readonly.py'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run credential-free negative tests
+        run: python -m unittest discover -s tests -p 'test_phase0_incident58_readonly.py' -v
+      - name: Install read-only audit client
+        run: python -m pip install -q google-auth requests
+      - name: Inspect four known historical document metadata (GET only)
+        env:
+          FIREBASE_PROJECT_ID: stock-market-c5016
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+        run: python -m deploy.phase0_incident58_readonly
