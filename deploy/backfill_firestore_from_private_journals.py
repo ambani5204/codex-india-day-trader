@@ -11,6 +11,15 @@ from deploy.firebase_live_publisher import JOURNALS, snapshot, publish
 from india_trader.core import IST
 
 def main():
+    """Fail closed: archived-paper Firestore writes quarantined after #58.
+
+    This guard precedes GitHub/Firestore credential access and network calls.
+    Re-enabling requires a separately reviewed, date-scoped and restorable
+    migration with independent source-of-truth reconciliation.
+    """
+    print("ARCHIVE_BACKFILL_ABORT reason=AUTOMATED_HISTORY_WRITES_DISABLED", flush=True)
+    return 4
+
     token = os.environ.get("JOURNAL_REPO_TOKEN", "")
     if not token:
         raise RuntimeError("JOURNAL_REPO_TOKEN missing")
@@ -66,4 +75,4 @@ def main():
         raise RuntimeError("No archived date had verifiable trade or signal events; nothing published")
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
