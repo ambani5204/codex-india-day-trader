@@ -99,6 +99,11 @@ def _validate(event: PaperEvent, lease: ownership.Lease, now: dt.datetime) -> No
                 or not INSTRUMENT_RE.fullmatch(event.hedge_instrument_key)
                 or event.hedge_instrument_key == event.instrument_key):
             raise EventRejected("CREDIT_SPREAD_HEDGE_REQUIRED")
+    elif event.event_kind == "PAPER_TRADE_CLOSED":
+        if event.hedge_instrument_key and (
+                not INSTRUMENT_RE.fullmatch(event.hedge_instrument_key)
+                or event.hedge_instrument_key == event.instrument_key):
+            raise EventRejected("INVALID_CLOSING_HEDGE")
     elif event.hedge_instrument_key:
         raise EventRejected("UNEXPECTED_HEDGE_INSTRUMENT")
     if event.event_kind == "PAPER_TRADE_CLOSED":
@@ -141,6 +146,62 @@ def _fields(event: PaperEvent, lease: ownership.Lease) -> dict:
     return result
 
 
+def _verify_open_before_close(client, lease: ownership.Lease,
+                              closed: PaperEvent) -> None:
+    """GET-only preflight for an existing matching open; not an atomic read-set.
+
+    A stronger transactional open/close foreign-key constraint remains a
+    release gate. A simultaneous privileged deletion could race this GET.
+    """
+    ref = (ownership.DB_RESOURCE + "/documents/" + COLLECTION + "/"
+           + closed.date_ist + "_" + closed.market + "_" + closed.open_event_id)
+    try:
+        response = client.get("https://firestore.googleapis.com/v1/" + ref,
+                              timeout=25)
+    except Exception as exc:
+        raise ownership.LeaseUnavailable("OPEN_EVENT_READ_UNAVAILABLE") from exc
+    if response.status_code == 404:
+        raise EventRejected("OPEN_EVENT_NOT_PERSISTED")
+    if response.status_code != 200:
+        raise ownership.LeaseUnavailable("OPEN_EVENT_READ_HTTP_" + str(response.status_code))
+    try:
+        doc = response.json()
+        fields = doc["fields"]
+        if doc["name"] != ref or not isinstance(fields, dict):
+            raise ValueError("Unexpected source")
+        ownership._parse_stamp(doc["updateTime"])
+        def string(name):
+            return fields[name]["stringValue"]
+        def integer(name):
+            return int(fields[name]["integerValue"])
+        if (string("event_id") != closed.open_event_id
+                or string("event_kind") not in ("PAPER_BUY_FILLED", "PAPER_SPREAD_OPEN")
+                or string("date_ist") != closed.date_ist
+                or string("market") != closed.market
+                or string("session_id") != closed.session_id
+                or string("strategy_id") != closed.strategy_id
+                or string("strategy_version") != lease.strategy_version
+                or string("owner_attempt_id") != lease.owner_attempt_id
+                or string("lease_id") != lease.lease_id
+                or integer("lease_generation") != lease.generation
+                or string("instrument_key") != closed.instrument_key
+                or string("option_type") != closed.option_type
+                or integer("quantity") != closed.quantity
+                or fields["paper_only"]["booleanValue"] is not True
+                or ownership._parse_stamp(string("occurred_at"))
+                   > ownership._parse_stamp(closed.occurred_at)
+                or (string("event_kind") == "PAPER_SPREAD_OPEN"
+                    and string("hedge_instrument_key")
+                        != closed.hedge_instrument_key)
+                or (string("event_kind") == "PAPER_BUY_FILLED"
+                    and closed.hedge_instrument_key)):
+            raise EventRejected("OPEN_EVENT_LINEAGE_MISMATCH")
+    except (KeyError, TypeError, ValueError, ownership.LeaseBlocked) as exc:
+        if isinstance(exc, EventRejected):
+            raise
+        raise EventRejected("OPEN_EVENT_METADATA_UNVERIFIED") from exc
+
+
 def append_once(client, lease: ownership.Lease, event: PaperEvent,
                 *, now: dt.datetime) -> ownership.Lease:
     """Fenced append. A failed/unknown ACK MUST NOT be retried blindly.
@@ -163,6 +224,8 @@ def append_once(client, lease: ownership.Lease, event: PaperEvent,
         raise EventRejected("LEASE_TOO_CLOSE_TO_EXPIRY")
     if lease.generation <= 0:
         raise EventRejected("INVALID_LEASE_GENERATION")
+    if event.event_kind == "PAPER_TRADE_CLOSED":
+        _verify_open_before_close(client, lease, event)
 
     writes = [
         {
