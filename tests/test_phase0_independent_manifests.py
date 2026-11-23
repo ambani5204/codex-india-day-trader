@@ -22,6 +22,15 @@ class IndependentManifestTests(unittest.TestCase):
         self.assertEqual(audit(J, J+J, [S], [S])["reason"], "FIRESTORE_DUPLICATE_PROVENANCE")
     def test_event_mismatch(self):
         self.assertEqual(audit(J, J, [S], [dict(S,event_id="other")])["reason"], "EVENT_OR_ACCOUNTING_MISMATCH")
+    def test_reused_run_id_across_distinct_sessions_fails_closed(self):
+        second = dict(J[0], session_id="s2", started_at="2026-11-19T10:15:00+05:30")
+        self.assertEqual(audit(J + [second], J + [second], [S], [S])["reason"], "JOURNAL_REUSED_RUN_ID")
+    def test_firestore_only_reused_run_id_fails_closed(self):
+        second = dict(J[0], session_id="s2", started_at="2026-11-19T10:15:00+05:30")
+        self.assertEqual(audit(J, J + [second], [S], [S])["reason"], "FIRESTORE_REUSED_RUN_ID")
+    def test_distinct_run_ids_preserve_event_checks(self):
+        second = dict(J[0], session_id="s2", run_id="r2", started_at="2026-11-19T10:15:00+05:30")
+        self.assertTrue(audit(J + [second], J + [second], [S], [S])["ok"])
     def test_no_private_ids_in_result(self):
         self.assertNotIn("2026-11-19T09:15:00+05:30", str(audit(J, [dict(J[0], strategy="EMA")], [S], [S])))
 if __name__ == "__main__":
