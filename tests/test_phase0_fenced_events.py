@@ -235,10 +235,13 @@ class FencedPaperEventTests(unittest.TestCase):
             {"open_event_id": ""},
         ):
             with self.subTest(overrides=overrides):
-                event = sample_event(
-                    event_id="close-002", event_kind="PAPER_TRADE_CLOSED",
-                    open_event_id="entry-001", gross_pnl=975.0,
-                    fees_total=75.0, net_pnl=900.0, **overrides)
+                fields = {
+                    "event_id": "close-002", "event_kind": "PAPER_TRADE_CLOSED",
+                    "open_event_id": "entry-001", "gross_pnl": 975.0,
+                    "fees_total": 75.0, "net_pnl": 900.0,
+                }
+                fields.update(overrides)
+                event = sample_event(**fields)
                 with self.assertRaises(writer.EventRejected):
                     self.commit(event)
         self.assertEqual(self.db.writes, 1)
