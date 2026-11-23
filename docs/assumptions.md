@@ -15,5 +15,7 @@ Source of truth: Master Prompt v2 §§0,3,17,20. These are low-risk, reversible 
 | ASM-009 | UI visualization-first skill is required but cannot hide incomplete financial KPIs or operational warnings. | Master Prompt priorities and owner screenshots. Source UI draft PR #5 only, no deployment. | Feature flags/abandon draft if false information risk |
 | ASM-010 | **An expired Firestore paper-session lease is not permission to restart the market session.** Automatic takeover stays disabled until immutable private journal events, open positions, after-cost P&L and every downstream publisher are fenced and reconciled. | CHG-20261123-2336 isolated Firestore CAS prototype; in-memory contention tests only, never integrated or production-verified. Runner clock/server-time skew remains an explicit future gate. | Discard PR #62; no production behavior changed |
 
+| ASM-011 | A paper fill/exit is not release-qualified until a **stable producer event ID** survives crash/replay, its opening event is source-linked, and every JSONL, sidecar and Firestore writer is fenced. A GET check of the opening event before a close is not atomic with the later write. | CHG-20261123-2342 draft event adapter and synthetic CI only; current production legacy writers remain unfenced. | Discard draft PR #62; no release behavior changed |
+
 **Current phase:** Phase 0 ACTIVE / stop for integrity; Phase 1 NOT STARTED. No capital, leverage, order, strategy-qualification or loss threshold changes. Assumptions are optional for owner review; no critical asks.
 
