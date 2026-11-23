@@ -37,7 +37,6 @@ class CleanupAllowlistTests(unittest.TestCase):
             session = FakeSession()
             with patch.object(c, "BACKUP", backup), \
                  patch.object(c, "client", return_value=session):
-                 patch("pathlib.Path", wraps=Path) as unused:
                 # The digest path is fixed in the implementation; run in a
                 # temporary working directory to avoid touching repository files.
                 import os
