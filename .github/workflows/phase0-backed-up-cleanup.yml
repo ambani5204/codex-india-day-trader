@@ -48,3 +48,19 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
         run: python -m deploy.phase0_backed_up_cleanup apply
+  verify-reconciliation:
+    needs: delete-backed-up-records
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -q google-auth requests
+      - name: Verify post-cleanup journal and Firestore consistency (GET only)
+        env:
+          FIREBASE_PROJECT_ID: stock-market-c5016
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: python -m deploy.phase0_firestore_journal_reconcile
