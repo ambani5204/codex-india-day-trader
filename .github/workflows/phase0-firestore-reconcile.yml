@@ -1,0 +1,40 @@
+name: Phase 0 read-only private journal Firestore reconciliation
+# CHG-20261121-0043: audit-branch push trigger for credential-safe diagnostic
+on:
+  push:
+    branches:
+      - audit/phase0-exit-evidence-20261120
+    paths:
+      - deploy/phase0_github_auth_probe.py
+      - deploy/phase0_firestore_journal_reconcile.py
+      - tests/test_phase0_github_auth_probe.py
+      - tests/test_phase0_firestore_journal_reconcile.py
+      - .github/workflows/phase0-firestore-reconcile.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Test fail-closed counter and fee/coverage checks offline
+        run: python -m unittest discover -s tests -p test_phase0_firestore_journal_reconcile.py -v
+      - name: Test credential-safe auth probe offline
+        run: python -m unittest discover -s tests -p test_phase0_github_auth_probe.py -v
+      - name: Install read-only authentication dependencies
+        run: python -m pip install -q google-auth requests
+      - name: Diagnose private GitHub access (GET only, status codes only)
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: python -m deploy.phase0_github_auth_probe
+      - name: Compare private JSONL event counts with Firestore history (GET only)
+        env:
+          FIREBASE_PROJECT_ID: stock-market-c5016
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: python -m deploy.phase0_firestore_journal_reconcile
