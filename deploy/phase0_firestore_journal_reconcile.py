@@ -59,7 +59,11 @@ def check_match(history, events, file_count):
     stats = summarize_events(events)
     closed = history.get("closed_trades")
     coverage = history.get("pnl_coverage")
-    signals = history.get("signals_count")
+    # Version 2 exposes option-qualified signals; archived INDEX_SIGNAL still
+    # reconciles only against its separate index candidate counter.
+    signals = (history.get("index_candidates_count")
+               if history.get("signal_contract_version") == 2
+               else history.get("signals_count"))
     if any(not isinstance(n, int) or isinstance(n, bool)
            for n in (closed, coverage, signals)):
         return "MISSING_COUNTERS"
