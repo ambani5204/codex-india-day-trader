@@ -196,3 +196,38 @@ def append_once(client, lease: ownership.Lease, event: PaperEvent,
     except (IndexError, KeyError, TypeError, ValueError, ownership.LeaseBlocked) as exc:
         raise ownership.LeaseUnavailable("FENCED_EVENT_ACK_UNVERIFIED") from exc
     return replace(lease, update_time=lease_update)
+
+
+def verify_persisted_event(client, lease: ownership.Lease, event: PaperEvent) -> str:
+    """GET-only adjudication after an ambiguous commit; never retries writes.
+
+    An exact private document match proves this immutable event was persisted,
+    not that it has a valid matched closing/opening trade or that Firestore
+    matches the external JSONL ledger. Missing data is UNKNOWN, not zero.
+    """
+    if not isinstance(lease, ownership.Lease):
+        raise EventRejected("MISSING_OWNER_LEASE")
+    _validate(event, lease, ownership._parse_stamp(event.occurred_at))
+    url = "https://firestore.googleapis.com/v1/" + _event_name(event)
+    try:
+        response = client.get(url, timeout=25)
+    except Exception as exc:
+        raise ownership.LeaseUnavailable("EVENT_READ_UNAVAILABLE") from exc
+    if response.status_code == 404:
+        return "EVENT_ABSENT_UNVERIFIED"
+    if response.status_code != 200:
+        raise ownership.LeaseUnavailable("EVENT_READ_HTTP_" + str(response.status_code))
+    try:
+        document = response.json()
+        if (not isinstance(document, dict)
+                or document.get("name") != _event_name(event)
+                or not isinstance(document.get("fields"), dict)):
+            raise EventRejected("EVENT_DOCUMENT_IDENTITY_INVALID")
+        ownership._parse_stamp(document.get("updateTime"))
+        if document["fields"] != _fields(event, lease):
+            raise EventRejected("EVENT_SOURCE_LINEAGE_OR_PAYLOAD_MISMATCH")
+    except (KeyError, TypeError, ValueError, ownership.LeaseBlocked) as exc:
+        if isinstance(exc, EventRejected):
+            raise
+        raise EventRejected("EVENT_DOCUMENT_MALFORMED") from exc
+    return "EVENT_PERSISTED_EXACT_MATCH"
