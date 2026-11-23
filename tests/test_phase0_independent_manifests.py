@@ -30,7 +30,8 @@ class IndependentManifestTests(unittest.TestCase):
         self.assertEqual(audit(J, J + [second], [S], [S])["reason"], "FIRESTORE_REUSED_RUN_ID")
     def test_distinct_run_ids_preserve_event_checks(self):
         second = dict(J[0], session_id="s2", run_id="r2", started_at="2026-11-19T10:15:00+05:30")
-        self.assertTrue(audit(J + [second], J + [second], [S], [S])["ok"])
+        second_signal = dict(S, session_id="s2", run_id="r2", event_id="e2")
+        self.assertTrue(audit(J + [second], J + [second], [S, second_signal], [S, second_signal])["ok"])
     def test_no_private_ids_in_result(self):
         self.assertNotIn("2026-11-19T09:15:00+05:30", str(audit(J, [dict(J[0], strategy="EMA")], [S], [S])))
 if __name__ == "__main__":
