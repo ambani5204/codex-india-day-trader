@@ -116,16 +116,12 @@ class SessionLeaseTests(unittest.TestCase):
             self.acquire("run-200", "strategy_v2")
         self.assertEqual(lease.inspect(self.db, DAY, "NIFTY"), current)
 
-    def test_markets_are_independently_fenced(self):
-        self.acquire()
-        sensex = lease.acquire(self.db, DAY, "SENSEX", "run-sensex",
-                               "strategy_v1", now=NOW)
-        self.assertEqual(sensex.market, "SENSEX")
-        self.assertEqual(self.db.write_count, 2) if False else None
-        # This fixture uses one document store; production has two paths.
-        # An independent path check, not a claim of multi-market DB behavior.
-        self.assertNotEqual(lease.document_name(DAY, "SENSEX"),
-                            lease.document_name(DAY, "NIFTY"))
+    def test_canonical_keys_are_distinct_between_markets(self):
+        nifty = lease.document_name(DAY, "NIFTY")
+        sensex = lease.document_name(DAY, "SENSEX")
+        self.assertNotEqual(nifty, sensex)
+        self.assertTrue(nifty.endswith("_NIFTY"))
+        self.assertTrue(sensex.endswith("_SENSEX"))
 
     def test_only_current_owner_can_renew_with_cas(self):
         first = self.acquire()
