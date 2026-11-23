@@ -235,9 +235,9 @@ def main():
             print("PHASE0_RECONCILIATION=INCOMPLETE records=" + str(len(results)) +
                   " unmatched=" + str(len(issues)) + " (no values logged)", flush=True)
             return 4
-        print("PHASE0_RECONCILIATION=COUNTS_MATCH; SESSION_TERMINATION_AND_OPTIONS_FILLS_UNVERIFIED records=" +
+        print("PHASE0_RECONCILIATION=INCOMPLETE reason=SESSION_TERMINATION_AND_OPTIONS_FILLS_UNVERIFIED records=" +
               str(len(results)), flush=True)
-        return 0
+        return 4
     except urllib.error.HTTPError as exc:
         print("PHASE0_RECONCILIATION=FAILED stage=" + stage +
               " http_status=" + str(exc.code), flush=True)
