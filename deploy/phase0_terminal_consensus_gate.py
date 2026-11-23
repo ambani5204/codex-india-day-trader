@@ -11,6 +11,8 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 def assess_terminal_consensus(record):
+    if not isinstance(record, dict):
+        return "BLOCKED_MALFORMED"
     events = record.get("terminal_events")
     if not isinstance(events, list) or len(events) != 1:
         return "BLOCKED_TERMINAL_EVENT_CARDINALITY"
