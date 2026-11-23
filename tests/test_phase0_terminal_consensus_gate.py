@@ -14,6 +14,25 @@ class TerminalConsensusTests(unittest.TestCase):
             with self.subTest(value=bad):
                 self.assertEqual(assess_terminal_consensus(bad), "BLOCKED_MALFORMED")
 
+    def test_missing_or_malformed_terminal_event_fails_closed(self):
+        for events, expected in (
+            (None, "BLOCKED_TERMINAL_EVENT_CARDINALITY"),
+            ([], "BLOCKED_TERMINAL_EVENT_CARDINALITY"),
+            ([None], "BLOCKED_TERMINAL_EVENT_TYPE"),
+            ([{}], "BLOCKED_TERMINAL_EVENT_ID"),
+        ):
+            with self.subTest(events=events):
+                r = fixture()
+                r["terminal_events"] = events
+                self.assertEqual(assess_terminal_consensus(r), expected)
+
+    def test_naive_or_missing_terminal_timestamp_fails_closed(self):
+        for stamp in (None, dt.datetime(2026, 11, 23, 15, 30)):
+            with self.subTest(timestamp=stamp):
+                r = fixture()
+                r["terminal_events"][0]["timestamp"] = stamp
+                self.assertEqual(assess_terminal_consensus(r), "BLOCKED_TERMINAL_TIMESTAMP")
+
     def test_valid_still_unverified(self):
         self.assertEqual(assess_terminal_consensus(fixture()),
                          "ELIGIBLE_FOR_EXTERNAL_CALENDAR_AND_PROVENANCE_REVIEW")
