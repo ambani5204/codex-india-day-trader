@@ -17,6 +17,8 @@ COLLECTIONS = ("paper_history", "paper_dashboard", "paper_evaluations")
 BACKUP = pathlib.Path("phase0_cleanup_backup.json")
 BASE = f"https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/(default)/documents"
 TARGET_DATE = "2026-11-14"
+# Explicitly authorized historical paper-only date. No inferred duplicate dates.
+AUTHORIZED_DATES = frozenset({TARGET_DATE})
 
 
 def client():
@@ -65,7 +67,11 @@ def plan():
     history = get_history()
     duplicates = duplicate_history_keys(
         [r for r in history if r.get("market") in ("NIFTY", "SENSEX") and r.get("date_ist")])
-    dates = {str(date) for date, _ in duplicates} | {TARGET_DATE}
+    duplicate_dates = {str(date) for date, _ in duplicates}
+    dates = duplicate_dates | {TARGET_DATE}
+    if not dates <= AUTHORIZED_DATES:
+        print("CLEANUP_ABORT reason=UNAUTHORIZED_DUPLICATE_DATES", flush=True)
+        return 4
     if not duplicates:
         print("CLEANUP_ABORT reason=NO_DUPLICATES", flush=True)
         return 4
@@ -97,6 +103,23 @@ def apply():
     payload = json.loads(BACKUP.read_text())
     if payload["project"] != PROJECT:
         raise RuntimeError("Backup project mismatch")
+    dates = payload.get("dates")
+    if not isinstance(dates, list) or not dates or not set(dates) <= AUTHORIZED_DATES:
+        raise RuntimeError("Unauthorized backup dates")
+    if set(payload.get("records", {})) != set(COLLECTIONS):
+        raise RuntimeError("Unexpected backup collections")
+    # Validate the ENTIRE backup before the first destructive request.
+    for collection, docs in payload["records"].items():
+        if not isinstance(docs, list):
+            raise RuntimeError("Malformed backup collection")
+        for doc in docs:
+            if not isinstance(doc, dict) or doc_date(doc) not in dates:
+                raise RuntimeError("Unauthorized document date")
+            name = doc.get("name")
+            if not isinstance(name, str) or not name.startswith(BASE.removeprefix("https://firestore.googleapis.com/v1/") + "/" + collection + "/"):
+                raise RuntimeError("Unexpected document path")
+            if not isinstance(doc.get("updateTime"), str) or not doc["updateTime"]:
+                raise RuntimeError("Missing document updateTime")
     session = client()
     count = 0
     for collection, docs in payload["records"].items():
