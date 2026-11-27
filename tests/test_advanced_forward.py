@@ -299,5 +299,73 @@ class AdvancedWorkerTests(unittest.TestCase):
                              dt.datetime(2026,11,12,11,20,tzinfo=IST))
 
 
+
+class SessionSplitTimeTests(unittest.TestCase):
+    """CHG-20261127-1605: env-configurable session end + flat-by for the two-job split."""
+
+    def test_env_time_parsing_and_guard(self):
+        from india_trader.advanced_forward import _env_time, UpstoxError
+        import os
+        self.assertEqual(_env_time('X_UNSET_ENV', dt.time(15,30)), dt.time(15,30))
+        for bad in ('1', '12345', '2500', '1270', 'abcd'):
+            os.environ['X_T']=bad
+            try:
+                with self.assertRaises(UpstoxError):
+                    _env_time('X_T', dt.time(15,30))
+            finally:
+                os.environ.pop('X_T', None)
+        os.environ['X_T']='1215'
+        try:
+            self.assertEqual(_env_time('X_T', dt.time(15,30)), dt.time(12,15))
+        finally:
+            os.environ.pop('X_T', None)
+
+    def test_morning_half_ends_cleanly_and_afternoon_continues_day_counters(self):
+        import os
+        cfg={'paper':True,'allow_live_orders':False,'allow_derivatives':True,
+             'capital_inr':100000,'max_loss_per_trade_inr':500,
+             'max_daily_loss_inr':1500,'max_trades_per_day':3,'max_allocation_fraction':.25}
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); m=root/'master.json'
+            m.write_text(json.dumps({'asof':'2026-11-12','records':master()}))
+            directory=str(root/'sessions')
+            def mk():
+                return SimpleNamespace(market='SENSEX',poll_seconds=30,cooldown_minutes=15,
+                    master=str(m),directory=directory,max_quote_age_seconds=15,credit_iv_threshold=18)
+            from io import StringIO
+            from contextlib import redirect_stdout
+            # MORNING: stop at 10:00, flat-by 10:00. No open position may survive.
+            c1=Clock(); c1.now=dt.datetime(2026,11,12,9,35,2,tzinfo=IST)
+            os.environ['PAPER_SESSION_END']='1000'; os.environ['PAPER_FLAT_BY']='1000'
+            try:
+                with redirect_stdout(StringIO()):
+                    self.assertEqual(run_advanced(mk(),cfg,MockApi(c1),c1.clock,c1.sleep),0)
+            finally:
+                os.environ.pop('PAPER_SESSION_END',None); os.environ.pop('PAPER_FLAT_BY',None)
+            morning=sorted(Path(directory).glob('2026-11-12_SENSEX_*.jsonl'))
+            self.assertEqual(len(morning),1)
+            mev=[json.loads(l) for l in morning[0].read_text().splitlines()]
+            summ=next(e for e in reversed(mev) if e['event']=='SESSION_SUMMARY')
+            # Morning session closed cleanly: no open position carried past its end.
+            self.assertIsNone(summ['summary']['open_position'])
+            self.assertFalse(any(e['event']=='UNRESOLVED_POSITION' for e in mev))
+            # the morning loop must have stopped by 10:00
+            self.assertLess(dt.datetime.fromisoformat(summ['timestamp']).time(), dt.time(10,1))
+            # AFTERNOON: fresh session later the same day continues (restart gate allows it)
+            c2=Clock(); c2.now=dt.datetime(2026,11,12,13,0,2,tzinfo=IST)
+            os.environ['PAPER_SESSION_END']='1520'
+            try:
+                with redirect_stdout(StringIO()):
+                    self.assertEqual(run_advanced(mk(),cfg,MockApi(c2),c2.clock,c2.sleep),0)
+            finally:
+                os.environ.pop('PAPER_SESSION_END',None)
+            allsess=sorted(Path(directory).glob('2026-11-12_SENSEX_*.jsonl'))
+            self.assertEqual(len(allsess),2)  # morning + afternoon, both clean
+            aev=[json.loads(l) for l in allsess[-1].read_text().splitlines()]
+            start=next(e for e in aev if e['event']=='SESSION_START')
+            # afternoon inherits the morning's completed-session count
+            self.assertGreaterEqual(start['prior_sessions'],1)
+
+
 if __name__=='__main__':
     unittest.main()

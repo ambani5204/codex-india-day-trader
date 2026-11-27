@@ -7,6 +7,7 @@ credit selling. Does NOT place orders or represent exchange executions.
 from __future__ import annotations
 import datetime as dt
 import json
+import os
 import time
 from pathlib import Path
 
@@ -136,6 +137,23 @@ def previous_day_state(folder, day, market, cooldown_minutes=15):
             'loss_consumed_inr':round(consumed,2),'cooldown_until':cooldown_until}
 
 
+def _env_time(name, default):
+    """Parse an HHMM env override (e.g. '1215') into a time; fall back to default.
+
+    Enables the two-job morning/afternoon split (CHG-20261127-1605). Unset env
+    => identical legacy behaviour (session end 15:30, flat-by 15:20).
+    """
+    raw=os.environ.get(name,'').strip()
+    if not raw:
+        return default
+    if len(raw)!=4 or not raw.isdigit():
+        raise UpstoxError(f'{name} must be HHMM, got {raw!r}')
+    hh,mm=int(raw[:2]),int(raw[2:])
+    if not (0<=hh<24 and 0<=mm<60):
+        raise UpstoxError(f'{name} not a valid time: {raw}')
+    return dt.time(hh,mm)
+
+
 def run_advanced(args,settings,reader=None,clock=None,sleep=None):
     clock=clock or (lambda:dt.datetime.now(IST))
     sleep=sleep or time.sleep
@@ -149,6 +167,12 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
         raise UpstoxError('Start between 09:15 and 15:25 IST on a weekday')
     if args.poll_seconds<10:
         raise UpstoxError('Advanced REST chain polling must be >= 10 seconds')
+    # Session end + flat-by are env-configurable for the morning/afternoon split.
+    # Defaults preserve legacy single-job behaviour exactly.
+    session_end=_env_time('PAPER_SESSION_END', dt.time(15,30))
+    engine_flat_by=_env_time('PAPER_FLAT_BY', dt.time(15,20))
+    if engine_flat_by>session_end:
+        raise UpstoxError('PAPER_FLAT_BY must be <= PAPER_SESSION_END')
     # Validate the advanced-only risk percent even when the day has no signal.
     adaptive_paper_risk(settings)
     today=now.date()
@@ -195,7 +219,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
     pos=None
     engine=None
     try:
-        while clock().astimezone(IST).time()<dt.time(15,30):
+        while clock().astimezone(IST).time()<session_end:
             now=clock().astimezone(IST)
             if pos:
                 try:
@@ -378,7 +402,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                                         contract['symbol'],qty,settings['capital_inr'],
                                         budget['trade_risk_cap_inr'],
                                         max_allocation_fraction=settings['max_allocation_fraction'],
-                                        fee_profile='UPSTOX',flat_by=dt.time(15,20),
+                                        fee_profile='UPSTOX',flat_by=engine_flat_by,
                                         planned_stop=risk_plan['stop_bid'],
                                         planned_target=risk_plan['target_bid'],
                                         min_net_reward_risk=1.5,
