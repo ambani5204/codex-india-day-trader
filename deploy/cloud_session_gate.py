@@ -65,7 +65,10 @@ def main():
         runs = json.loads(response.read()).get("workflow_runs", [])
     competing = []
     for run in runs:
-        if run.get("name") != "Cloud CE-PE live paper trading (NO REAL ORDERS)":
+        # Dedup against runs of THIS workflow only (works for both the single-job
+        # and the morning/afternoon split, whatever each is named).
+        this_workflow = os.environ.get("GITHUB_WORKFLOW", "Cloud CE-PE live paper trading (NO REAL ORDERS)")
+        if run.get("name") != this_workflow:
             continue
         if int(run["id"]) == run_id:
             continue

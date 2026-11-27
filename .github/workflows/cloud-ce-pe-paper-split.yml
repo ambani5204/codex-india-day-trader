@@ -6,6 +6,11 @@ name: Cloud CE-PE paper split morning afternoon (NO REAL ORDERS)
 # single-job cloud-ce-pe-paper.yml and the 3pm stopgap is reverted.
 on:
   workflow_dispatch:
+  schedule:
+    # Backup to the reliable Claude scheduled start (weekdays ~09:07 IST). The
+    # gate self-dedupes same-workflow runs, so overlap is safe. IST = UTC+5:30.
+    - cron: "40,55 3 * * 1-5"
+    - cron: "10,25 4 * * 1-5"
 
 permissions:
   contents: read
