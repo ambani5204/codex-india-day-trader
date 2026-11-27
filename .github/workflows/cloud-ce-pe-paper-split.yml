@@ -1,0 +1,150 @@
+name: Cloud CE-PE paper split morning afternoon (NO REAL ORDERS)
+# CHG-20261127-1625. Two sequential jobs so a full market day fits GitHub's
+# 360-min PER-JOB cap: paper_morning (09:15-12:20) then paper_afternoon
+# (12:20-15:20, needs: paper_morning). PAPER-ONLY; no real orders ever.
+# Dispatch-only until a supervised full-day validation; then it replaces the
+# single-job cloud-ce-pe-paper.yml and the 3pm stopgap is reverted.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cloud-ce-pe-paper-split-session
+  cancel-in-progress: false
+
+jobs:
+  paper_morning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+      PAPER_SESSION_END: "1220"
+      PAPER_FLAT_BY: "1215"
+      RUN_SIDECARS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Prevent duplicate market-day sessions across retry triggers
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m deploy.cloud_session_gate
+      - name: Report duplicate or inactive paper session explicitly
+        if: steps.gate.outputs.should_run != 'true'
+        run: |
+          echo "::notice::SKIPPED morning - gate did not allow a session (market closed or duplicate)."
+      - name: Offline safety and unit tests
+        if: steps.gate.outputs.should_run == 'true'
+        run: python -m unittest discover -s tests -q
+      - name: Verify all live paper strategies use structural candle stops
+        if: steps.gate.outputs.should_run == 'true'
+        run: python -m unittest discover -s tests -p 'test_structural_stop_policy.py' -v
+      - name: Validate ORB expiry paper-only candidate routing
+        if: steps.gate.outputs.should_run == 'true'
+        run: python -m india_trader.orb_expiry_shadow --self-test
+      - name: Verify PRIVATE archive destination before trading
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: python -m deploy.private_journal_sync --verify-only
+      - name: Restore previous same-day private journals before starting workers
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: python -m deploy.private_journal_restore
+      - name: Run morning paper session (read only)
+        if: steps.gate.outputs.should_run == 'true'
+        id: session
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          FIREBASE_PROJECT_ID: stock-market-c5016
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: bash scripts/run_paper_session.sh
+      - name: Upload detailed journals ONLY to verified PRIVATE repository
+        if: always() && steps.gate.outputs.should_run == 'true' && steps.session.outcome != 'skipped'
+        id: private_upload
+        continue-on-error: true
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: |
+          if ! compgen -G "trader/paper_upstox/$(TZ=Asia/Kolkata date +%F)_*.jsonl" > /dev/null; then
+            echo "::error::NO_LEGACY_JOURNAL: morning worker produced no dated journal"
+            exit 1
+          fi
+          python -m deploy.private_journal_sync
+      - name: Publish ONLY public-safe aggregate (never raw quotes/journals)
+        if: always() && steps.gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-safe-ce-pe-morning-${{ github.run_id }}
+          path: trader/cloud_paper_summary.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Report morning outcome
+        if: always()
+        run: |
+          echo "## Morning paper session" >> "$GITHUB_STEP_SUMMARY"
+          echo "Gate: ${{ steps.gate.outputs.should_run }}; session: ${{ steps.session.outcome }}; upload: ${{ steps.private_upload.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+
+  paper_afternoon:
+    needs: paper_morning
+    if: needs.paper_morning.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+      PAPER_SESSION_END: "1522"
+      PAPER_FLAT_BY: "1520"
+      RUN_SIDECARS: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore same-day private journals (morning handoff) before resuming
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: python -m deploy.private_journal_restore
+      - name: Run afternoon paper session (read only, main worker only)
+        id: session
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          FIREBASE_PROJECT_ID: stock-market-c5016
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: bash scripts/run_paper_session.sh
+      - name: Upload detailed journals ONLY to verified PRIVATE repository
+        if: always() && steps.session.outcome != 'skipped'
+        id: private_upload
+        continue-on-error: true
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: |
+          if ! compgen -G "trader/paper_upstox/$(TZ=Asia/Kolkata date +%F)_*.jsonl" > /dev/null; then
+            echo "::error::NO_LEGACY_JOURNAL: afternoon worker produced no dated journal"
+            exit 1
+          fi
+          python -m deploy.private_journal_sync
+      - name: Publish ONLY public-safe aggregate (never raw quotes/journals)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-safe-ce-pe-afternoon-${{ github.run_id }}
+          path: trader/cloud_paper_summary.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Report afternoon outcome
+        if: always()
+        run: |
+          echo "## Afternoon paper session" >> "$GITHUB_STEP_SUMMARY"
+          echo "Session: ${{ steps.session.outcome }}; upload: ${{ steps.private_upload.outcome }}" >> "$GITHUB_STEP_SUMMARY"
