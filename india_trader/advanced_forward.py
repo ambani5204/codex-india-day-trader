@@ -465,6 +465,7 @@ def run_advanced(args,settings,reader=None,clock=None,sleep=None):
                     'warning':'Not marked closed. Manual reconciliation required; do not assume settlement.'})
         record({'event':'SESSION_SUMMARY','timestamp':now.isoformat(),
                 'status':'UNRESOLVED' if pos else 'CLOSED_OR_NO_TRADE',
+                'session_end_ist':session_end.strftime('%H:%M'),
                 'summary':{'closed_trades':closed,'realized_net_pnl':round(net,2),
                            'prior_closed_trades':prior_closed,
                            'day_total_closed_trades':prior_closed+closed,

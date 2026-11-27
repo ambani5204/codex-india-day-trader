@@ -46,10 +46,17 @@ def summarize(day: str, market: str, worker_exit: int, startup: str) -> dict:
             terminal = events[-1]
             try:
                 stamp = dt.datetime.fromisoformat(terminal["timestamp"])
+                # Each session certifies against its OWN planned end (two-job
+                # split: morning ends ~12:20, afternoon ~15:20). Legacy journals
+                # without session_end_ist default to the full-day 15:30 close.
+                required = dt.time(15, 30)
+                raw_end = terminal.get("session_end_ist")
+                if isinstance(raw_end, str) and len(raw_end) == 5 and raw_end[2] == ":":
+                    required = dt.time(int(raw_end[:2]), int(raw_end[3:]))
                 valid = (terminal.get("event") == "SESSION_SUMMARY"
                          and stamp.tzinfo is not None
                          and stamp.astimezone(IST).date().isoformat() == day
-                         and stamp.astimezone(IST).time() >= dt.time(15, 30))
+                         and stamp.astimezone(IST).time() >= required)
             except (KeyError, TypeError, ValueError):
                 valid = False
             if not valid:
