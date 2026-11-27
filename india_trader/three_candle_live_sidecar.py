@@ -7,7 +7,7 @@ independently of legacy paper dashboard.
 from __future__ import annotations
 import datetime as dt,json,os,time
 from pathlib import Path
-from .core import IST
+from .core import IST, env_time
 from .upstox import UpstoxReader,UpstoxError,INDICES,load_today_master,select_atm
 from .three_candle_top_down_v2 import test_day
 from .paper_sim import option_fees
@@ -29,8 +29,10 @@ def run():
     path=OUT/(now.date().isoformat()+".jsonl")
     if path.exists():raise RuntimeError("Existing top-down session journal; duplicate runner blocked")
     previous={};positions={};done=set()
+    _end=env_time('PAPER_SESSION_END', dt.time(15,30))
+    _flat=env_time('PAPER_FLAT_BY', dt.time(15,25))
     with path.open("x") as journal:
-        while dt.datetime.now(IST).time()<dt.time(15,30):
+        while dt.datetime.now(IST).time()<_end:
             now=dt.datetime.now(IST)
             for market in ("NIFTY","SENSEX"):
                 try:
@@ -72,7 +74,7 @@ def run():
                         target=(spot>=pos["index_target"] if side==1 else spot<=pos["index_target"])
                         # Strategy candle stop/target only; no arbitrary
                         # premium-percentage stop or profit target.
-                        eod=now.time()>=dt.time(15,25)
+                        eod=now.time()>=_flat
                         if stop or target or eod:
                             qty=pos["contract"]["lot_size"]
                             fee=option_fees(pos["entry"],q.bid,qty,pos["contract"]["exchange"],"UPSTOX")["total"]
