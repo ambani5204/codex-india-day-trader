@@ -24,6 +24,11 @@ FILE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_(NIFTY|SENSEX)_[A-Za-z0-9_.-]+\.j
 MAX_PAGES = 3
 
 
+class MissingArchiveDate(Exception):
+    """A date-scoped journal directory was not found after repository auth."""
+
+
+
 def as_number(value):
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
 
@@ -135,7 +140,14 @@ def load_archives(token, date):
     # Do not classify a 404 as an empty archive: it can also indicate
     # missing permissions, a renamed path, or a deleted archive.
     # Fail closed and preserve the HTTP status for incident triage.
-    listing = gh_get(token, "/contents/journals/" + date)
+    try:
+        listing = gh_get(token, "/contents/journals/" + date)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            # The repository access check has already succeeded in main().
+            # A date-specific 404 is an absent archive, not a token failure.
+            raise MissingArchiveDate(date) from exc
+        raise
     if not isinstance(listing, list):
         raise ValueError("Archive listing is not a directory")
     events = defaultdict(list)
@@ -237,6 +249,9 @@ def main():
             return 4
         print("PHASE0_RECONCILIATION=INCOMPLETE reason=SESSION_TERMINATION_AND_OPTIONS_FILLS_UNVERIFIED records=" +
               str(len(results)), flush=True)
+        return 4
+    except MissingArchiveDate:
+        print("PHASE0_RECONCILIATION=BLOCKED stage=ARCHIVE_READ reason=MISSING_DATE_ARCHIVE", flush=True)
         return 4
     except urllib.error.HTTPError as exc:
         print("PHASE0_RECONCILIATION=FAILED stage=" + stage +
