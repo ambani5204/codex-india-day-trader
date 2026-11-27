@@ -1,4 +1,20 @@
 {
   "schema_version": 1,
-  "changes": {}
+  "changes": {
+    "CHG-20261127-0955": {
+      "kind": "git-only",
+      "commit": "aba945369c37bb5efd53bfa5d552c0585f1cb318",
+      "desc": "ALGOBANI task queue + dispatcher (#67)"
+    },
+    "CHG-20261127-1110": {
+      "kind": "git-only",
+      "commit": "5a76c11c1fdb4cb8a9fb450911b8808ed5737888",
+      "desc": "remove nightly push trigger + #18 (#70)"
+    },
+    "CHG-20261127-1205": {
+      "kind": "git-only",
+      "commit": "e6d7e3ce1255e17ada4db7df144e1fe9dd8f419b",
+      "desc": "Firestore purge tool, dry-run default (#71)"
+    }
+  }
 }
