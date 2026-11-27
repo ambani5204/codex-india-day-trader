@@ -7,18 +7,19 @@ Paper-only. Never claim profitability. See docs/decisions/ADR-0001 and docs/RISK
 On 2026-11-27 the owner directed a permanent purge of all paper data before today
 (journals + Firestore; executed under CHG-20261127-1205). The historical Phase 0
 reconciliation blockers (#20, #21, #24) and incident #58 concerned data that no
-longer exists, so they are closed as moot. Phase 0 restarts from a clean baseline
-of 2026-11-27 and is complete except for one time-based gate: at least one real
-paper session must close cleanly with a 15:30 IST SESSION_SUMMARY that reconciles
-(the current day's session, pending the GitHub 360-min job-cap fix).
+longer exists, so they are closed as moot. Phase 0 restarts from a clean baseline of 2026-11-27 and was CLOSED on
+2026-11-27 by owner decision: all engineering gates met and the 2026-11-27
+session is clean and count-matched (see the Phase 0 exit status below).
 
-## Phase 0 exit status (fresh baseline)
+## Phase 0 exit status — CLOSED 2026-11-27 (owner decision)
 - [x] Inventory both repos (codex-india-day-trader + codex-trading-journals).
-- [x] Fresh test baseline: 389 offline tests green on 3.10/3.11/3.12.
+- [x] Fresh test baseline: 408 offline tests green on 3.10/3.11/3.12.
 - [x] Firestore schema + internal read-model reconciliation: SAMPLED/MATCH, 0 anomalies, only 2026-11-27 docs remain.
 - [x] Risk register (docs/RISK_REGISTER.md).
 - [x] Tested SOURCE rollback rehearsal (docs/audit/PHASE0_ROLLBACK_REHEARSAL_20261127.md); manifest registered.
-- [ ] One clean reconciled paper session with 15:30 SESSION_SUMMARY  ← only remaining gate (needs job-cap fix + a full market day).
+- [x] A clean session: 2026-11-27 NIFTY+SENSEX each closed with an end-aware SESSION_SUMMARY, no open or unresolved positions; journal↔Firestore counts MATCH.
+  - **Honest caveat:** the reconciler reports `COUNTS_MATCH_SESSION_TERMINATION_UNVERIFIED` (exit 4) because a 0-trade day has no option fills to certify independently. This is the tool's built-in conservatism, not a data defect. The owner reviewed the clean summaries + matching counts and accepts this as sufficient to close Phase 0. Full after-fee options reconciliation will first be exercised when a session takes a real trade (expected from Phase 1's full-day runs).
+  - Historical reconciliation items #20/#21/#24 and incident #58 are moot: their data was permanently purged on 2026-11-27 at the owner's instruction.
 
 ## Phase 1 milestones (this phase)
 - **M1 — Session reliability.** Split the market-day workflow into morning + afternoon jobs so a full session finishes under the 360-min cap and always writes SESSION_SUMMARY. Add a daily 09:05 IST start path. *Exit:* one full day completes end-to-end with a reconciled summary.
