@@ -1,0 +1,72 @@
+name: Mean Reversion 365-Day Research
+on:
+  push:
+    branches:
+      - research/mean-reversion-365d-20261119
+    paths:
+      - '.github/workflows/mean-reversion-365d.yml'
+      - 'deploy/mean_reversion_365d.py'
+      - 'deploy/mean_reversion_historical_data.py'
+      - 'tests/test_mean_reversion_365d.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run Mean Reversion research unit tests
+        run: python -m unittest discover -s tests -p 'test_mean_reversion_365d.py' -v
+      - name: Restore existing historical market cache
+        uses: actions/cache@v4
+        with:
+          path: trader/mean_reversion_1m_cache
+          key: mean-reversion-365-${{ github.run_id }}
+          restore-keys: |
+            ema9-fib-365-
+            three-candle-v2-
+            ema9-daily-
+            mean-reversion-365-
+      - name: Fetch genuine NIFTY and SENSEX 1m candles
+        run: |
+          set -euo pipefail
+          test -n "$UPSTOX_ACCESS_TOKEN" || { echo "::error::UPSTOX_ACCESS_TOKEN secret missing"; exit 1; }
+          for attempt in 1 2 3; do
+            if python -m deploy.mean_reversion_historical_data --days 400 --out-dir research_data; then break; fi
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep $((attempt * 20))
+          done
+      - name: Run real 365+ day NIFTY and SENSEX index-proxy backtest
+        run: |
+          python -m deploy.mean_reversion_365d --nifty research_data/nifty_1m.csv --sensex research_data/sensex_1m.csv --cost-bps 10 --output mean_reversion_365d_results.json
+      - name: Publish 48-combination comparison
+        if: success()
+        run: |
+          python - <<'PY'
+          import json,os
+          d=json.load(open("mean_reversion_365d_results.json"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("## Mean Reversion 365-day index-price proxy\n\n")
+              f.write("| Index | Candle | RR | Trades | Win % | Net R | PF | Max DD R |\n|---|---|---|---:|---:|---:|---:|---:|\n")
+              for market in ("NIFTY","SENSEX"):
+                  for key,v in d[market]["combinations"].items():
+                      h=v["holdout"]
+                      f.write(f"| {market} | {key.split('_')[0]} | {key.split('_')[-1]} | {h['trades']} | {h['win_rate_pct']} | {h['net_r']} | {h['profit_factor']} | {h['max_drawdown_r']} |\n")
+              f.write("\nIndex-only cost proxy; not historical CE/PE execution P&L.\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mean-reversion-365d-results
+          path: mean_reversion_365d_results.json
+          if-no-files-found: warn
+          retention-days: 30
