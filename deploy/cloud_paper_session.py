@@ -42,6 +42,18 @@ def summarize(day: str, market: str, worker_exit: int, startup: str) -> dict:
                     events.append(event)
         if not any(e.get("event") == "SESSION_SUMMARY" for e in events):
             unresolved += 1
+        else:
+            terminal = events[-1]
+            try:
+                stamp = dt.datetime.fromisoformat(terminal["timestamp"])
+                valid = (terminal.get("event") == "SESSION_SUMMARY"
+                         and stamp.tzinfo is not None
+                         and stamp.astimezone(IST).date().isoformat() == day
+                         and stamp.astimezone(IST).time() >= dt.time(15, 30))
+            except (KeyError, TypeError, ValueError):
+                valid = False
+            if not valid:
+                unresolved += 1
         for e in events:
             kind = e.get("event")
             if kind in ("INDEX_SIGNAL", "SIGNAL_REJECTED", "STRUCTURE_REJECTED",
