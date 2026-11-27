@@ -155,6 +155,27 @@ def firestore_get_collections():
     return result
 
 
+
+def count_unmatched_evaluations(evaluations, history):
+    """Read-only count; never expose report IDs, trade values or private lineage.
+
+    This is an anomaly inventory, NOT an orphan/legacy classification.
+    """
+    dates = {r.get("date_ist") for r in history
+             if isinstance(r, dict) and r.get("data_type") == "PAPER_SIMULATION"
+             and isinstance(r.get("date_ist"), str)}
+    missing = 0
+    unavailable = 0
+    for doc_id, report in evaluations:
+        if doc_id == "latest":
+            continue
+        if not isinstance(report, dict) or not isinstance(report.get("report_date"), str):
+            unavailable += 1
+        elif report["report_date"] not in dates:
+            missing += 1
+    return {"missing_eligible_history": missing, "invalid_report_metadata": unavailable}
+
+
 def main():
     if not os.getenv("FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET") or not os.getenv("FIREBASE_PROJECT_ID"):
         print("PHASE0_INTERNAL_RECONCILE=UNAVAILABLE reason=MISSING_CONFIG")
@@ -165,6 +186,14 @@ def main():
         if history_status != "MATCH":
             print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=" + history_status, flush=True)
             return 4
+        # #30: report orphan/invalid evaluation counts even when duplicate
+        # sessions later block reconciliation.
+        anomaly_counts = count_unmatched_evaluations(docs["paper_evaluations"], history)
+        print("PHASE0_EVALUATION_ANOMALIES missing_eligible_history="
+              + str(anomaly_counts["missing_eligible_history"])
+              + " invalid_report_metadata="
+              + str(anomaly_counts["invalid_report_metadata"])
+              + " (provenance unverified; no values or IDs)", flush=True)
         from deploy.phase0_duplicate_provenance import classify_history_groups
         duplicate_audit = classify_history_groups(history)
         if duplicate_audit.get("status"):
