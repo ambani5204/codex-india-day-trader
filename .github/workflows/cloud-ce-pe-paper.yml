@@ -1,13 +1,12 @@
 name: Cloud CE-PE live paper trading (NO REAL ORDERS)
 
 on:
+  # Crons removed (CHG-20261127-1630): the morning/afternoon split
+  # (cloud-ce-pe-paper-split.yml) is now the scheduled full-day runner. This
+  # single-job workflow is kept as a manual fallback only, so it can never
+  # double-run a market day alongside the split. Its PAPER_SESSION_END=1500
+  # stopgap still applies if dispatched by hand.
   workflow_dispatch:
-  schedule:
-    # First attempt 09:00 IST; repeated opportunities if GitHub delays/drops a cron.
-    # Session gate ensures only one active paper session per market day.
-    - cron: "30,45 3 * * 1-5"
-    - cron: "0,15,30,45 4 * * 1-5"
-    - cron: "0,15,30 5 * * 1-5"
 
 permissions:
   contents: read

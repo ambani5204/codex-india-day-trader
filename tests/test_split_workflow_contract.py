@@ -46,11 +46,17 @@ class SplitWorkflow(unittest.TestCase):
         self.assertLess(m["PAPER_SESSION_END"], a["PAPER_SESSION_END"])
 
     @unittest.skipIf(yaml is None, "pyyaml not installed")
-    def test_split_is_dispatch_only_until_validated(self):
-        d = yaml.safe_load(WF.read_text())
-        on = d.get(True, d.get("on"))
-        self.assertIn("workflow_dispatch", on)
-        self.assertNotIn("schedule", on if isinstance(on, dict) else {})
+    def test_split_is_the_scheduled_runner_and_single_job_is_not(self):
+        # After cutover (CHG-20261127-1630) the split is the scheduled full-day
+        # runner; the single-job workflow must have NO crons so it can never
+        # double-run a market day alongside the split.
+        split = yaml.safe_load(WF.read_text())
+        son = split.get(True, split.get("on"))
+        self.assertIn("workflow_dispatch", son)
+        self.assertIn("schedule", son)
+        single = yaml.safe_load((ROOT / ".github/workflows/cloud-ce-pe-paper.yml").read_text())
+        gon = single.get(True, single.get("on"))
+        self.assertNotIn("schedule", gon if isinstance(gon, dict) else {})
 
 
 if __name__ == "__main__":

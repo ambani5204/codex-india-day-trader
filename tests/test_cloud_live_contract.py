@@ -12,11 +12,14 @@ ROOT = Path(__file__).resolve().parents[1]
 IST = ZoneInfo("Asia/Kolkata")
 
 class LivePaperContract(TestCase):
-    def test_0900_weekday_cron_is_present(self):
-        yaml=(ROOT/".github/workflows/cloud-ce-pe-paper.yml").read_text()
-        self.assertIn('cron: "30,45 3 * * 1-5"',yaml)
-        self.assertIn('cron: "0,15,30,45 4 * * 1-5"',yaml)
-        self.assertIn('cron: "0,15,30 5 * * 1-5"',yaml)
+    def test_morning_crons_are_on_the_split_runner_not_the_single_job(self):
+        # Cutover (CHG-20261127-1630): the split workflow is the scheduled
+        # full-day runner; the single-job keeps no crons so it cannot double-run.
+        split=(ROOT/".github/workflows/cloud-ce-pe-paper-split.yml").read_text()
+        self.assertIn('cron: "40,55 3 * * 1-5"',split)
+        self.assertIn('cron: "10,25 4 * * 1-5"',split)
+        single=(ROOT/".github/workflows/cloud-ce-pe-paper.yml").read_text()
+        self.assertNotIn("cron:",single)
 
     def test_skipped_workflow_is_explicit_without_failing_ci(self):
         yaml=(ROOT/".github/workflows/cloud-ce-pe-paper.yml").read_text()
