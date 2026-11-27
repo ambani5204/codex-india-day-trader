@@ -98,10 +98,25 @@ class FirestoreArchiveReconcileTests(unittest.TestCase):
     def test_archive_http404_is_not_silently_treated_as_empty(self):
         error = urllib.error.HTTPError("https://api.github.com/example", 404, "Not Found", {}, None)
         with patch.object(reconcile, "gh_get", side_effect=error):
+            with self.assertRaises(reconcile.MissingArchiveDate):
+                reconcile.load_archives("synthetic-token", "2026-11-14")
+
+
+    def test_invalid_archive_dates_fail_before_network(self):
+        for invalid in ("2026-02-30", "2026-11-14/../15", "2026-11-14?x=1",
+                        "2026-11-14T00:00:00", "2026-1-4"):
+            with self.subTest(invalid=invalid):
+                with patch.object(reconcile, "gh_get") as get:
+                    with self.assertRaises(ValueError):
+                        reconcile.load_archives("synthetic-token", invalid)
+                    get.assert_not_called()
+
+    def test_archive_403_stays_auth_failure(self):
+        error = urllib.error.HTTPError("https://api.github.com/example", 403, "Forbidden", {}, None)
+        with patch.object(reconcile, "gh_get", side_effect=error):
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 reconcile.load_archives("synthetic-token", "2026-11-14")
-        self.assertEqual(caught.exception.code, 404)
-
+        self.assertEqual(caught.exception.code, 403)
 
     def test_repository_metadata_uses_canonical_url_without_trailing_slash(self):
         class FakeResponse:
