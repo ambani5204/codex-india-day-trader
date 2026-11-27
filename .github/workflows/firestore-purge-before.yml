@@ -1,0 +1,45 @@
+name: Owner-requested Firestore purge before date (dry-run default)
+# CHG-20261127-1205. Manual dispatch ONLY; no push or schedule trigger.
+on:
+  workflow_dispatch:
+    inputs:
+      cutoff:
+        description: "Delete documents dated strictly before this IST date (YYYY-MM-DD)"
+        required: true
+        default: "2026-11-27"
+      mode:
+        description: "dry-run or apply"
+        required: true
+        default: "dry-run"
+        type: choice
+        options: [dry-run, apply]
+      confirm:
+        description: "For apply: DELETE-BEFORE-<cutoff>"
+        required: false
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: firestore-purge
+  cancel-in-progress: false
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Offline planner tests
+        run: python -m unittest discover -s tests -p test_firestore_purge_before.py -v
+      - name: Install Google authentication library
+        run: python -m pip install -q google-auth requests
+      - name: Purge (counts only, no values)
+        env:
+          FIREBASE_PROJECT_ID: stock-market-c5016
+          FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STOCK_MARKET }}
+          CUTOFF: ${{ inputs.cutoff }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: python -m deploy.firestore_purge_before --cutoff "$CUTOFF" --mode "$MODE" --confirm "$CONFIRM"
