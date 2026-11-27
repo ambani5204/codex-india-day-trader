@@ -1,7 +1,15 @@
 # ALGOBANI delivery plan (Phase 1)
 
-Status: **Phase 1 STARTED 2026-11-27.** Supersedes docs/PHASE1_PREPARATION_NIFTY_FIRST.md.
+Status: **Phase 1 CLOSED 2026-11-27 (owner decision).** Supersedes docs/PHASE1_PREPARATION_NIFTY_FIRST.md.
 Paper-only. Never claim profitability. See docs/decisions/ADR-0001 and docs/RISK_REGISTER.md.
+
+## Phase 1 exit (per #17: "plan, milestones, ADR/assumptions, tested rollback design")
+- [x] Plan — this document.
+- [x] Milestones — M1–M5 below (M1 already implemented and live for Monday's full-day validation, ahead of requirement).
+- [x] ADRs + assumptions — docs/decisions/ADR-0001, ADR-0002; docs/assumptions.md; the Assumptions section below.
+- [x] Tested rollback design — scripts/rollback (fail-closed), ops/rollback_manifest.json, and a rehearsed end-to-end run (docs/audit/PHASE0_ROLLBACK_REHEARSAL_20261127.md). Design AND rehearsal, exceeding "design".
+
+**Scope of this closure:** Phase 1 is the planning/design phase. Closing it means these four deliverables exist and are merged — NOT that M2–M5 execution or later phases (2–10) are done. Those remain future work, tracked below and in #17.
 
 ## Baseline reset
 On 2026-11-27 the owner directed a permanent purge of all paper data before today
