@@ -20,10 +20,17 @@ concurrency:
 jobs:
   paper:
     runs-on: ubuntu-latest
-    timeout-minutes: 405
+    # GitHub-hosted jobs are hard-capped at 360 min. A 09:15 start to the old
+    # 15:30 close is ~377 min and gets SIGKILLed before SESSION_SUMMARY. Ending
+    # the session at 15:00 (PAPER_SESSION_END below) keeps a 09:15 start to
+    # ~345 min + overhead, inside the cap, so the summary is always written.
+    # Stopgap until the morning/afternoon two-job split (CHG-20261127-1620).
+    timeout-minutes: 355
     env:
       UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
       PYTHONUNBUFFERED: "1"
+      PAPER_SESSION_END: "1500"
+      PAPER_FLAT_BY: "1455"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
