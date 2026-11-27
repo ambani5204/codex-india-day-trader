@@ -12,6 +12,118 @@ ROOT = Path(__file__).resolve().parents[1]
 JOURNALS = ROOT / "trader" / "paper_upstox"
 
 
+def _actionable_paper_signals(records: list[dict]) -> list[dict]:
+    """Count only eligible CE/PE paper intents, never raw index candidates.
+
+    This relies on the paper engine's already-validated ENTRY_SIGNAL and
+    paired OPTION_SELECTION, or its risk-sized two-leg PAPER_SPREAD_OPEN.
+    It is not independent evidence of an exchange fill or immutable lineage.
+    Missing/malformed legacy attribution fails closed to zero signals.
+    """
+    selections = {}
+    qualified = []
+    seen = set()
+    for event in records:
+        kind = event.get("event")
+        session = event.get("session")
+        stamp = event.get("timestamp")
+        if not isinstance(session, str) or not session:
+            continue
+        if kind == "OPTION_SELECTION":
+            contract = event.get("contract")
+            if isinstance(contract, dict) and isinstance(contract.get("symbol"), str):
+                selections[(session, contract["symbol"])] = (contract, stamp)
+        elif kind == "ENTRY_SIGNAL":
+            symbol = event.get("symbol")
+            if not isinstance(symbol, str) or not symbol or not isinstance(stamp, str) or not stamp:
+                continue
+            selected = selections.get((session, symbol))
+            if not selected:
+                continue
+            contract, selected_at = selected
+            plan = contract.get("risk_plan")
+            if (contract.get("option_type") not in ("CE", "PE")
+                    or not isinstance(contract.get("expiry"), str)
+                    or not isinstance(plan, dict)
+                    or not isinstance(plan.get("quantity"), int)
+                    or isinstance(plan.get("quantity"), bool)
+                    or plan["quantity"] <= 0
+                    or not isinstance(plan.get("stop_bid"), (int, float))
+                    or not isinstance(plan.get("target_bid"), (int, float))
+                    or not isinstance(selected_at, str) or selected_at > stamp):
+                continue
+            key = (session, "LONG", symbol, event.get("event_id") or stamp)
+            if key not in seen:
+                seen.add(key)
+                qualified.append(event)
+        elif kind == "PAPER_SPREAD_OPEN":
+            contract = event.get("contract")
+            if not isinstance(contract, dict) or not isinstance(stamp, str) or not stamp:
+                continue
+            if (contract.get("option_type") not in ("CE", "PE")
+                    or not isinstance(contract.get("expiry"), str)
+                    or not isinstance(contract.get("short_key"), str)
+                    or not isinstance(contract.get("long_key"), str)
+                    or contract["short_key"] == contract["long_key"]
+                    or not isinstance(contract.get("quantity"), int)
+                    or isinstance(contract.get("quantity"), bool)
+                    or contract["quantity"] <= 0
+                    or not isinstance(contract.get("estimated_max_expiry_loss_after_fees"), (int, float))
+                    or contract["estimated_max_expiry_loss_after_fees"] <= 0):
+                continue
+            key = (session, "CREDIT", contract["short_key"], contract["long_key"],
+                   event.get("event_id") or stamp)
+            if key not in seen:
+                seen.add(key)
+                qualified.append(event)
+    return qualified
+
+
+def _entry_count_with_integrity(fills: list[dict]) -> tuple[int | None, str]:
+    """Unknown on duplicated or unidentifiable fills, never inflate entry KPIs.
+
+    Legacy timestamp keys are provisional; only producer-issued IDs can provide
+    cross-restart idempotency. This checks one journal snapshot, not Firestore.
+    """
+    if not fills:
+        return 0, "NO_FILL_EVENTS"
+    seen = set()
+    provisional = False
+    for event in fills:
+        session = event.get("session")
+        stamp = event.get("timestamp")
+        if (not isinstance(session, str) or not session
+                or not isinstance(stamp, str) or not stamp):
+            return None, "MISSING_FILL_IDENTITY"
+        kind = event.get("event")
+        if kind == "PAPER_BUY_FILLED":
+            symbol = event.get("symbol")
+            if not isinstance(symbol, str) or not symbol:
+                return None, "MISSING_FILL_CONTRACT"
+            instrument = (symbol,)
+        elif kind == "PAPER_SPREAD_OPEN":
+            contract = event.get("contract")
+            if not isinstance(contract, dict):
+                return None, "MISSING_FILL_CONTRACT"
+            short_key, long_key = contract.get("short_key"), contract.get("long_key")
+            if (not isinstance(short_key, str) or not short_key
+                    or not isinstance(long_key, str) or not long_key
+                    or short_key == long_key):
+                return None, "MISSING_FILL_HEDGE"
+            instrument = (short_key, long_key)
+        else:
+            return None, "UNKNOWN_FILL_EVENT"
+        event_id = event.get("event_id")
+        if not isinstance(event_id, str) or not event_id:
+            provisional = True
+            event_id = stamp
+        key = (session, kind, instrument, event_id)
+        if key in seen:
+            return None, "DUPLICATE_FILL_IDENTITY"
+        seen.add(key)
+    return len(fills), "PROVISIONAL_LEGACY_TIMESTAMP_ID" if provisional else "EVENT_IDS_PRESENT"
+
+
 def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> dict:
     today = day or dt.datetime.now(IST).date().isoformat()
     records = []
@@ -30,9 +142,11 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
     rejected = [e for e in records if e.get("event") in ("ENTRY_REJECTED", "SIGNAL_REJECTED", "STRUCTURE_REJECTED", "ENTRY_BLOCKED")]
     errors = [e for e in records if e.get("event") in ("MARKET_DATA_ERROR", "UNRESOLVED_POSITION")]
     fills = [e for e in records if e.get("event") in ("PAPER_BUY_FILLED", "PAPER_SPREAD_OPEN")]
+    entry_count, entry_integrity = _entry_count_with_integrity(fills)
     closed = [e for e in records if e.get("event") == "PAPER_TRADE_CLOSED"]
-    signals = [e for e in records if e.get("event") == "INDEX_SIGNAL"]
-    important = [e for e in records if e.get("event") in ("INDEX_SIGNAL", "ENTRY_REJECTED", "SIGNAL_REJECTED", "STRUCTURE_REJECTED", "ENTRY_BLOCKED", "MARKET_DATA_ERROR", "PAPER_BUY_FILLED", "PAPER_SPREAD_OPEN", "PAPER_TRADE_CLOSED", "UNRESOLVED_POSITION")]
+    index_candidates = [e for e in records if e.get("event") == "INDEX_SIGNAL"]
+    actionable_signals = _actionable_paper_signals(records)
+    important = [e for e in records if e.get("event") in ("ENTRY_SIGNAL", "ENTRY_REJECTED", "SIGNAL_REJECTED", "STRUCTURE_REJECTED", "ENTRY_BLOCKED", "MARKET_DATA_ERROR", "PAPER_BUY_FILLED", "PAPER_SPREAD_OPEN", "PAPER_TRADE_CLOSED", "UNRESOLVED_POSITION")]
     # Calculate financial metrics from verified CLOSED paper fills, never from signals.
     # Preserve unavailable values as null when no closed trade has a net P&L.
     closed_with_pnl = [e for e in closed if isinstance(e.get("net_pnl"), (int, float))
@@ -134,8 +248,12 @@ def snapshot(market: str, state: str, run_id: str, day: str | None = None) -> di
         "session_status": state,
         "updated_at": dt.datetime.now(IST).isoformat(),
         "run_id": run_id,
-        "signals_count": len(signals),
-        "entry_event_count": len(fills),
+        "signals_count": len(actionable_signals),
+        "index_candidates_count": len(index_candidates),
+        "signal_contract_version": 2,
+        "signal_qualification_basis": "VALIDATED_LONG_ENTRY_INTENT_OR_RISK_SIZED_CREDIT_PAPER_OPEN",
+        "entry_event_count": entry_count,
+        "entry_identity_status": entry_integrity,
         "closed_trades": len(closed),
         "net_pnl": net_pnl,
         "gross_pnl": gross_pnl,

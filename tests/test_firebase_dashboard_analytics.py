@@ -23,7 +23,9 @@ class DashboardAnalyticsTest(unittest.TestCase):
                 "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
             with patch.object(publisher, "JOURNALS", Path(folder)):
                 result = publisher.snapshot("NIFTY", "ARCHIVED_SESSION", "test", day=day)
-            self.assertEqual(result["signals_count"], 1)
+            self.assertEqual(result["signals_count"], 0)
+            self.assertEqual(result["index_candidates_count"], 1)
+            self.assertEqual(result["signal_contract_version"], 2)
             self.assertEqual(result["closed_trades"], 1)
             self.assertEqual(result["net_pnl"], -1140.12)
             self.assertEqual(result["gross_pnl"], -1071.85)

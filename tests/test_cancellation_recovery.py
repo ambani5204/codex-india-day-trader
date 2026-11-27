@@ -24,7 +24,9 @@ class CancellationRecoveryTests(unittest.TestCase):
             self.assertEqual(restore.restore(day,token="test"),1)
             self.assertEqual(restore.restore(day,token="test"),1)
             data=snapshot("NIFTY","RUNNING","new",day=day)
-            self.assertEqual(data["signals_count"],1)
+            self.assertEqual(data["signals_count"],0)
+            self.assertEqual(data["index_candidates_count"],1)
+            self.assertEqual(data["signal_contract_version"],2)
             self.assertEqual(data["closed_trades"],0)
 
     def test_reject_archive_conflict(self):
