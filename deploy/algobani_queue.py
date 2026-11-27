@@ -17,9 +17,12 @@ Standalone, credentials-free, non-trading orchestration primitive.
   it to ``todo``.
 * Completion-triggered dispatch: ``complete`` returns the dependents that
   became ready, and the dispatcher claims again without any schedule wait.
-* Watchdog: ``recover_expired`` (also run inside every ``claim``) returns
-  tasks whose lease expired to ``todo`` (or ``failed`` when attempts are
-  exhausted).
+* Watchdog: ``recover_expired`` (run inside every ``claim`` and exposed as
+  the ``recover`` CLI command for a scheduler/cron fallback) returns tasks
+  whose lease expired to ``todo`` (or ``failed`` when attempts are
+  exhausted). Leases use wall-clock time; a large clock step can expire a
+  live lease early (the worker is then fenced out and killed, never doubled).
+* Refusals of stale holders are persisted as ``stale_refused`` events.
 
 This module never touches Firestore, brokers, journals, GitHub workflows or
 orders. It is imported by nothing in the trading path.
@@ -81,7 +84,15 @@ class QueueError(Exception):
 
 
 class StaleClaim(QueueError):
-    """The caller does not hold the current lease/fence for the task."""
+    """The caller does not hold the current lease/fence for the task.
+
+    ``audit`` (task_id, kind, fence, owner, detail) is persisted by ``_tx``
+    *after* rollback so refusals survive in the event log.
+    """
+
+    def __init__(self, message, audit=None):
+        super().__init__(message)
+        self.audit = audit
 
 
 @dataclass(frozen=True)
@@ -116,6 +127,11 @@ class TaskQueue:
         c.execute("BEGIN IMMEDIATE")
         try:
             yield c
+        except StaleClaim as exc:
+            c.execute("ROLLBACK")
+            if exc.audit:
+                self._event(c, *exc.audit)  # autocommit, outside the rolled-back tx
+            raise
         except BaseException:
             c.execute("ROLLBACK")
             raise
@@ -149,10 +165,12 @@ class TaskQueue:
     def _require_holder(self, c, task_id, owner, fence):
         row = self._row(c, task_id)
         if row["status"] != "claimed" or row["owner"] != owner or row["fence"] != fence:
-            self._event(c, task_id, "stale_refused", fence, owner, f"status={row['status']} fence={row['fence']}")
-            raise StaleClaim(f"{task_id}: caller {owner}@{fence} does not hold current lease")
+            raise StaleClaim(f"{task_id}: caller {owner}@{fence} does not hold current lease",
+                             (task_id, "stale_refused", fence, owner,
+                              f"status={row['status']} fence={row['fence']}"))
         if row["lease_expires"] is not None and row["lease_expires"] < self.clock():
-            raise StaleClaim(f"{task_id}: lease expired")
+            raise StaleClaim(f"{task_id}: lease expired",
+                             (task_id, "stale_refused", fence, owner, "lease expired"))
         return row
 
     # ------------------------------------------------------------- authoring
@@ -181,7 +199,9 @@ class TaskQueue:
             if existing is not None:
                 old_deps = [r[0] for r in c.execute(
                     "SELECT depends_on FROM deps WHERE task_id=? ORDER BY depends_on", (task_id,))]
-                if existing["title"] == title and existing["payload"] == body and old_deps == deps:
+                if (existing["title"] == title and existing["payload"] == body and old_deps == deps
+                        and existing["max_attempts"] == int(max_attempts)
+                        and existing["priority"] == int(priority)):
                     return False
                 raise QueueError(f"task {task_id} exists with a different definition")
             for d in deps:
@@ -286,8 +306,8 @@ class TaskQueue:
                 if row["completion_key"] == key:
                     self._event(c, task_id, "duplicate_completion", fence, owner)
                     return "duplicate", []
-                self._event(c, task_id, "stale_refused", fence, owner, "already done with different key")
-                raise StaleClaim(f"{task_id}: already completed under a different key")
+                raise StaleClaim(f"{task_id}: already completed under a different key",
+                                 (task_id, "stale_refused", fence, owner, "already done with different key"))
             self._require_holder(c, task_id, owner, fence)
             now = self.clock()
             c.execute(
@@ -356,7 +376,36 @@ class TaskQueue:
             q, args = q + " WHERE task_id=?", (task_id,)
         return [dict(r) for r in self._conn.execute(q + " ORDER BY seq", args)]
 
+    def stuck_ids(self) -> list:
+        """``todo`` tasks that can never become ready because an ancestor failed."""
+        rows = self._conn.execute("SELECT id FROM tasks WHERE status='todo' ORDER BY id").fetchall()
+        stuck = []
+        for r in rows:
+            seen, stack = set(), [r["id"]]
+            while stack:
+                node = stack.pop()
+                if node in seen:
+                    continue
+                seen.add(node)
+                for d in self._conn.execute(
+                        "SELECT p.id, p.status FROM deps d JOIN tasks p ON p.id=d.depends_on WHERE d.task_id=?",
+                        (node,)):
+                    if d["status"] == "failed":
+                        stuck.append(r["id"])
+                        stack = []
+                        break
+                    stack.append(d["id"])
+        return stuck
+
+    def requeue(self, task_id: str, note: str = "") -> None:
+        """Human action: give a ``failed`` task a fresh attempt budget."""
+        with self._tx() as c:
+            row = self._row(c, task_id)
+            if row["status"] != "failed":
+                raise QueueError(f"{task_id} is {row['status']}, not failed")
+            c.execute("UPDATE tasks SET status='todo', attempts=0, updated=? WHERE id=?", (self.clock(), task_id))
+            self._event(c, task_id, "requeued", detail=note)
+
     def is_drained(self) -> bool:
-        """True when nothing is todo/claimed (only done/failed/waiting remain)."""
-        c = self.counts()
-        return c["todo"] == 0 and c["claimed"] == 0
+        """True when no task is claimed or ready (waiting/failed/stuck may remain)."""
+        return self.counts()["claimed"] == 0 and not self.ready_ids()

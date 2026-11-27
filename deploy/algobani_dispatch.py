@@ -22,6 +22,8 @@ Usage::
     python -m deploy.algobani_dispatch run  --db q.sqlite --worker-cmd "python worker.py" [--max-tasks N]
     python -m deploy.algobani_dispatch status --db q.sqlite
     python -m deploy.algobani_dispatch unblock --db q.sqlite --id T1
+    python -m deploy.algobani_dispatch recover --db q.sqlite      # cron watchdog fallback
+    python -m deploy.algobani_dispatch requeue --db q.sqlite --id T1
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ import hashlib
 import json
 import os
 import shlex
+import signal
 import socket
 import subprocess
 import sys
@@ -46,6 +49,18 @@ except ImportError:  # pragma: no cover - direct script execution
 EX_TEMPFAIL = 75
 
 
+def _kill_group(proc: subprocess.Popen) -> None:
+    """Kill the worker's whole process group (also reaps grandchildren)."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:  # pragma: no cover
+        pass
+
+
 def subprocess_runner(cmd: Sequence[str], timeout: float = 3600.0,
                       heartbeat: Optional[Callable[[], None]] = None,
                       heartbeat_every: float = 30.0, cwd: Optional[str] = None):
@@ -59,29 +74,32 @@ def subprocess_runner(cmd: Sequence[str], timeout: float = 3600.0,
         start = time.monotonic()
         # Output goes to temp files, not pipes, so a verbose worker (e.g. an AI
         # agent) can never deadlock on a full pipe buffer while we poll.
-        with tempfile.TemporaryFile("w+") as fout, tempfile.TemporaryFile("w+") as ferr, \
-                tempfile.TemporaryFile("w+") as fin:
+        tf = dict(mode="w+", encoding="utf-8", errors="replace")
+        with tempfile.TemporaryFile(**tf) as fout, tempfile.TemporaryFile(**tf) as ferr, \
+                tempfile.TemporaryFile(**tf) as fin:
             fin.write(payload)
             fin.seek(0)
-            proc = subprocess.Popen(list(cmd), stdin=fin, stdout=fout, stderr=ferr,
-                                    env=env, cwd=cwd, text=True)
-            deadline = start + timeout
-            next_hb = start + heartbeat_every
-            while proc.poll() is None:
-                now = time.monotonic()
-                if now >= deadline:
-                    proc.kill()
-                    proc.wait()
-                    return "failed", {"error": f"timeout after {timeout}s", "pid": proc.pid}
-                if heartbeat and now >= next_hb:
-                    try:
-                        heartbeat()
-                    except Exception as exc:  # lease lost: stop the worker, never orphan it
-                        proc.kill()
-                        proc.wait()
-                        return "failed", {"error": f"lease lost: {exc}", "pid": proc.pid}
-                    next_hb = now + heartbeat_every
-                time.sleep(min(0.05, max(0.0, deadline - now)))
+            # New session => the worker and all its children form one process
+            # group that we kill together; nothing is left running after the
+            # dispatcher exits for any reason (timeout, lost lease, signal).
+            proc = subprocess.Popen(list(cmd), stdin=fin, stdout=fout, stderr=ferr, env=env,
+                                    cwd=cwd, start_new_session=True)
+            try:
+                deadline = start + timeout
+                next_hb = start + heartbeat_every
+                while proc.poll() is None:
+                    now = time.monotonic()
+                    if now >= deadline:
+                        return "failed", {"error": f"timeout after {timeout}s", "pid": proc.pid}
+                    if heartbeat and now >= next_hb:
+                        try:
+                            heartbeat()
+                        except Exception as exc:  # lease lost: stop the worker, never double-run
+                            return "failed", {"error": f"lease lost: {exc}", "pid": proc.pid, "lease_lost": True}
+                        next_hb = now + heartbeat_every
+                    time.sleep(min(0.05, max(0.0, deadline - now)))
+            finally:
+                _kill_group(proc)
             fout.seek(0)
             ferr.seek(0)
             out, err = fout.read(), ferr.read()
@@ -124,6 +142,9 @@ def drain(queue: TaskQueue, runner, owner: str, lease_seconds: float = 300.0,
             if outcome == "done":
                 status, ready = queue.complete(claim.task_id, owner, claim.fence, info)
                 log(f"DONE {claim.task_id} ({status}); newly ready: {ready or 'none'}")
+            elif info.get("lease_lost"):
+                log(f"LEASE LOST {claim.task_id}: worker killed; watchdog will reassign")
+                outcome = "stale"
             elif outcome == "blocked":
                 queue.block(claim.task_id, owner, claim.fence, info.get("blocker", "blocked"))
                 log(f"BLOCKED {claim.task_id}: {info.get('blocker')} -> waiting; moving on")
@@ -162,11 +183,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     r.add_argument("--owner", default=None)
     s = sub.add_parser("status")
     s.add_argument("--db", required=True)
+    w = sub.add_parser("recover", help="watchdog pass: release expired leases")
+    w.add_argument("--db", required=True)
+    rq = sub.add_parser("requeue", help="human action: retry a failed task")
+    rq.add_argument("--db", required=True)
+    rq.add_argument("--id", required=True)
+    rq.add_argument("--note", default="")
     u = sub.add_parser("unblock")
     u.add_argument("--db", required=True)
     u.add_argument("--id", required=True)
     u.add_argument("--note", default="")
     args = p.parse_args(argv)
+    if args.cmd == "run":
+        # SIGTERM -> SystemExit so the runner's finally kills the worker group.
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
 
     q = TaskQueue(args.db)
     try:
@@ -197,7 +227,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             hist = drain(q, runner, owner, lease, args.max_tasks, log=lambda m: print(m, flush=True))
             print(json.dumps({"executed": hist, "counts": q.counts()}))
         elif args.cmd == "status":
-            print(json.dumps({"counts": q.counts(), "ready": q.ready_ids()}))
+            print(json.dumps({"counts": q.counts(), "ready": q.ready_ids(), "stuck": q.stuck_ids()}))
+        elif args.cmd == "recover":
+            print(json.dumps({"recovered": q.recover_expired()}))
+        elif args.cmd == "requeue":
+            q.requeue(args.id, args.note)
+            print(json.dumps({"id": args.id, "status": "todo"}))
         elif args.cmd == "unblock":
             q.unblock(args.id, args.note)
             print(json.dumps({"id": args.id, "status": "todo"}))

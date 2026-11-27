@@ -21,6 +21,20 @@ class Clock:
         return self.t
 
 
+def _alive(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as fh:
+            return fh.read().split()[2] != "Z"
+    except FileNotFoundError:
+        return False
+    except OSError:  # pragma: no cover
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+
 def _claimer(db, owner, out_q):
     q = TaskQueue(db)
     got = []
@@ -76,6 +90,8 @@ class DagTests(Base):
         self.assertFalse(self.q.add_task("A", "a", {"k": 1}))
         with self.assertRaises(QueueError):
             self.q.add_task("A", "a", {"k": 2})
+        with self.assertRaises(QueueError):
+            self.q.add_task("A", "a", {"k": 1}, priority=5)
 
     def test_invalid_ids_and_leases(self):
         for bad in ("", "-x", "a b", "x" * 200, None):
@@ -111,6 +127,7 @@ class LeaseFencingTests(Base):
             self.q.complete("A", "w1", c.fence, completion_key="other")
         kinds = [e["kind"] for e in self.q.events("A")]
         self.assertEqual(kinds.count("completed"), 1)
+        self.assertEqual(kinds.count("stale_refused"), 1)  # refusal persisted despite rollback
         self.assertIn("duplicate_completion", kinds)
 
     def test_crash_recovery_and_immediate_reassignment_fences_old_owner(self):
@@ -146,6 +163,11 @@ class RetryBlockTests(Base):
         self.assertEqual(outcomes, ["todo", "todo", "failed"])
         self.assertIsNone(self.q.claim("w", 60))  # dependent B stays locked
         self.assertEqual(self.q.counts()["failed"], 1)
+        self.assertEqual(self.q.stuck_ids(), ["B"])
+        self.assertTrue(self.q.is_drained())
+        self.q.requeue("A", "human fixed env")
+        c = self.q.claim("w", 60)
+        self.assertEqual((c.task_id, c.attempt), ("A", 1))
 
     def test_watchdog_exhaustion_marks_failed(self):
         self.q.add_task("A", "a", max_attempts=1)
@@ -242,17 +264,52 @@ class DispatcherTests(Base):
         self.assertEqual(hist, [("LOUD", 1, "done")])
         self.assertEqual(len(self.q.get("LOUD")["result"]["stdout_tail"]), 500)
 
-    def test_lost_lease_kills_worker_and_is_failed(self):
-        cmd = self._worker("import time; time.sleep(30)")
-        self.q.add_task("L", "l", max_attempts=1)
+    def test_lost_lease_kills_worker_and_grandchild_and_is_reassigned(self):
+        pidfile = Path(self.tmp.name) / "grandchild.pid"
+        cmd = self._worker(f"""
+            import subprocess, sys, time
+            g = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+            open({str(pidfile)!r}, "w").write(str(g.pid))
+            time.sleep(60)
+        """)
+        self.q.add_task("L", "l")
+        q, clock = self.q, self.clock
 
-        def hb():
-            raise StaleClaim("fenced out")
+        def hb():  # a competing dispatcher took the task: real fencing refusal
+            import time
+            for _ in range(200):
+                if pidfile.exists() and pidfile.read_text():
+                    break
+                time.sleep(0.05)
+            c = state["claim"]
+            clock.t += 120
+            q.claim("other", 30)
+            q.heartbeat(c.task_id, "disp", c.fence, 60)
 
-        runner = dispatch.subprocess_runner(cmd, timeout=20, heartbeat=hb, heartbeat_every=0.1)
-        hist = dispatch.drain(self.q, runner, "disp", 60)
-        self.assertEqual(hist, [("L", 1, "failed->failed")])
-        self.assertIn("lease lost", self.q.get("L")["last_error"])
+        state = {}
+        inner = dispatch.subprocess_runner(cmd, timeout=20, heartbeat=hb, heartbeat_every=0.5)
+
+        def runner(claim):
+            state["claim"] = claim
+            return inner(claim)
+
+        hist = dispatch.drain(q, runner, "disp", 60, max_tasks=1)
+        self.assertEqual(hist, [("L", 1, "stale")])
+        self.assertEqual((q.get("L")["owner"], q.get("L")["fence"]), ("other", 2))
+        self.assertIn("stale_refused", [e["kind"] for e in q.events("L")])
+        gpid = int(pidfile.read_text())
+        import time
+        for _ in range(50):
+            if not _alive(gpid):
+                break
+            time.sleep(0.1)
+        self.assertFalse(_alive(gpid), "grandchild survived process-group kill")
+
+    def test_non_utf8_output_does_not_turn_success_into_failure(self):
+        cmd = self._worker("import sys; sys.stdout.buffer.write(b'\\xff\\xfe ok')")
+        self.q.add_task("B", "b")
+        hist = dispatch.drain(self.q, dispatch.subprocess_runner(cmd, timeout=30), "disp", 60)
+        self.assertEqual(hist, [("B", 1, "done")])
 
     def test_timeout_is_failed_attempt(self):
         cmd = self._worker("import time; time.sleep(30)")
@@ -266,6 +323,8 @@ class DispatcherTests(Base):
         dispatch.main(["add", "--db", db, "--id", "C1", "--title", "c1"])
         dispatch.main(["add", "--db", db, "--id", "C2", "--title", "c2", "--dep", "C1"])
         dispatch.main(["run", "--db", db, "--worker-cmd", " ".join(cmd), "--lease", "30"])
+        dispatch.main(["recover", "--db", db])
+        dispatch.main(["status", "--db", db])
         q = TaskQueue(db)
         self.assertEqual(q.counts()["done"], 2)
         q.close()
