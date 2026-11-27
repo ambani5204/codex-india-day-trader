@@ -1,0 +1,42 @@
+name: Strategy option-P&L backtest (real index candles, modelled premiums)
+# CHG-20261127-2310. Fetches REAL Upstox 5-min index candles and runs every
+# strategy with Black-Scholes-modelled option P&L. Modelled premiums => approximate,
+# not broker-verified. PAPER/RESEARCH ONLY, no orders.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Lookback days (e.g. 365 or 900)"
+        required: true
+        default: "365"
+      iv:
+        description: "Assumed annual IV (e.g. 0.15)"
+        required: true
+        default: "0.15"
+permissions:
+  contents: read
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      UPSTOX_ACCESS_TOKEN: ${{ secrets.UPSTOX_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Offline tests for the backtest + pricer
+        run: python -m unittest tests.test_options_pricing tests.test_backtest_harness tests.test_paper_exec -v
+      - name: Run NIFTY backtest
+        run: |
+          test -n "$UPSTOX_ACCESS_TOKEN"
+          python -m india_trader.strategies.options_backtest --market NIFTY --days ${{ inputs.days }} --iv ${{ inputs.iv }} --out trader/backtests/options_NIFTY_${{ inputs.days }}d.json
+      - name: Run SENSEX backtest
+        run: python -m india_trader.strategies.options_backtest --market SENSEX --days ${{ inputs.days }} --iv ${{ inputs.iv }} --out trader/backtests/options_SENSEX_${{ inputs.days }}d.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: options-backtest-${{ inputs.days }}d
+          path: trader/backtests/*.json
+          if-no-files-found: warn
