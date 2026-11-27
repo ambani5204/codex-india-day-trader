@@ -2,7 +2,7 @@
 import unittest
 
 from deploy.phase0_firestore_internal_reconcile import (
-    validate_day, compare_latest, compare_evaluation,
+    validate_day, compare_latest, compare_evaluation, valid_history_key, select_paper_history,
 )
 
 
@@ -30,6 +30,24 @@ def snapshot(**extra):
 
 
 class FirestoreInternalReconcileTests(unittest.TestCase):
+    def test_untyped_history_is_not_silently_dropped(self):
+        status, rows = select_paper_history([snapshot(), {"date_ist": "2026-11-14"}])
+        self.assertEqual((status, rows), ("UNTYPED_HISTORY_PRESENT", []))
+
+    def test_explicit_proxy_history_excluded(self):
+        status, rows = select_paper_history([snapshot(), snapshot(data_type="PROXY_RESEARCH")])
+        self.assertEqual(status, "MATCH")
+        self.assertEqual(len(rows), 1)
+
+    def test_invalid_history_rows_fail_closed(self):
+        self.assertEqual(select_paper_history([None]), ("INVALID_HISTORY_ROWS", []))
+
+    def test_valid_history_key(self):
+        self.assertTrue(valid_history_key(snapshot()))
+        for row in (None, {}, snapshot(date_ist=""), snapshot(date_ist="  "),
+                    snapshot(date_ist=None), snapshot(market="UNKNOWN")):
+            self.assertFalse(valid_history_key(row))
+
     def test_consistent_single_trade_passes(self):
         self.assertEqual(validate_day(snapshot()), "MATCH")
 
@@ -68,6 +86,18 @@ class FirestoreInternalReconcileTests(unittest.TestCase):
         report = {"closed_trades": 2, "verified_pnl_trades": 1, "net_pnl": -12.0}
         self.assertEqual(compare_evaluation(report, [snapshot(), unknown]),
                          "EVALUATION_PARTIAL_FINANCIAL_COVERAGE")
+
+    def test_evaluation_rejects_boolean_counter_instead_of_counting_true(self):
+        report = {"closed_trades": 1, "verified_pnl_trades": 1, "net_pnl": -12.0}
+        self.assertEqual(compare_evaluation(report, [snapshot(closed_trades=True)]),
+                         "EVALUATION_INVALID_HISTORY_COUNTERS")
+
+    def test_evaluation_rejects_negative_and_excess_coverage(self):
+        report = {"closed_trades": 1, "verified_pnl_trades": 1, "net_pnl": -12.0}
+        self.assertEqual(compare_evaluation(report, [snapshot(closed_trades=-1)]),
+                         "EVALUATION_INVALID_HISTORY_COUNTERS")
+        self.assertEqual(compare_evaluation(report, [snapshot(pnl_coverage=2)]),
+                         "EVALUATION_INVALID_HISTORY_COVERAGE")
 
     def test_empty_date_is_not_healthy(self):
         self.assertEqual(compare_evaluation({}, []), "NO_HISTORY_FOR_DATE")

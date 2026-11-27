@@ -67,6 +67,23 @@ def validate_day(row):
     return "MATCH"
 
 
+def valid_history_key(row):
+    """Reject unknown market or missing day; never invent a grouping key."""
+    return (isinstance(row, dict)
+            and isinstance(row.get("date_ist"), str)
+            and bool(row["date_ist"].strip())
+            and row.get("market") in {"NIFTY", "SENSEX"})
+
+
+def select_paper_history(rows):
+    """Fail closed if untyped history could be silently excluded from the audit."""
+    if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+        return "INVALID_HISTORY_ROWS", []
+    if any(r.get("data_type") is None for r in rows):
+        return "UNTYPED_HISTORY_PRESENT", []
+    return "MATCH", [r for r in rows if r.get("data_type") == "PAPER_SIMULATION"]
+
+
 def compare_latest(latest, historical):
     for key in ("date_ist", "market", "run_id", "closed_trades",
                 "pnl_coverage", "signals_count", "entry_event_count",
@@ -79,8 +96,14 @@ def compare_latest(latest, historical):
 def compare_evaluation(report, days):
     if not days:
         return "NO_HISTORY_FOR_DATE"
-    closed = sum(x["closed_trades"] for x in days if isinstance(x.get("closed_trades"), int))
-    coverage = sum(x["pnl_coverage"] for x in days if isinstance(x.get("pnl_coverage"), int))
+    for row in days:
+        if any(not isinstance(row.get(key), int) or isinstance(row.get(key), bool)
+               or row[key] < 0 for key in ("closed_trades", "pnl_coverage")):
+            return "EVALUATION_INVALID_HISTORY_COUNTERS"
+        if row["pnl_coverage"] > row["closed_trades"]:
+            return "EVALUATION_INVALID_HISTORY_COVERAGE"
+    closed = sum(x["closed_trades"] for x in days)
+    coverage = sum(x["pnl_coverage"] for x in days)
     if not comparable(report.get("closed_trades"), closed) or not comparable(report.get("verified_pnl_trades"), coverage):
         return "EVALUATION_COUNTER_MISMATCH"
     if coverage < closed:
@@ -138,10 +161,26 @@ def main():
         return 2
     try:
         docs = firestore_get_collections()
-        history = [r for _, r in docs["paper_history"] if r.get("data_type") == "PAPER_SIMULATION"]
+        history_status, history = select_paper_history([r for _, r in docs["paper_history"]])
+        if history_status != "MATCH":
+            print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=" + history_status, flush=True)
+            return 4
+        from deploy.phase0_duplicate_provenance import classify_history_groups
+        duplicate_audit = classify_history_groups(history)
+        if duplicate_audit.get("status"):
+            print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=" + duplicate_audit["status"], flush=True)
+            return 4
+        if duplicate_audit["duplicate_groups"]:
+            print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=DUPLICATE_HISTORY_KEYS"
+                  " duplicate_groups=" + str(duplicate_audit["duplicate_groups"])
+                  + " (session identity/termination unverified)", flush=True)
+            return 4
         by_key = {}
         for row in history:
             k = (row.get("date_ist"), row.get("market"))
+            if not valid_history_key(row):
+                print("PHASE0_INTERNAL_RECONCILE=BLOCKED reason=INVALID_HISTORY_KEY", flush=True)
+                return 4
             current = by_key.get(k)
             if current is None or str(row.get("updated_at") or "") > str(current.get("updated_at") or ""):
                 by_key[k] = row
