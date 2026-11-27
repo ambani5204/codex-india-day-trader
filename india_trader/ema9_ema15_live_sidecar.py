@@ -2,7 +2,7 @@
 from __future__ import annotations
 import datetime as dt,json,os,time
 from pathlib import Path
-from .core import IST
+from .core import IST, env_time
 from .upstox import UpstoxReader,UpstoxError,INDICES,load_today_master,select_atm
 from .ema9_ema15_live_rules import detect,levels,advance
 from .paper_sim import option_fees
@@ -25,8 +25,10 @@ def run():
     journal=OUT/(str(now.date())+".jsonl")
     if journal.exists():raise RuntimeError("Duplicate session journal; refusing to restart")
     positions={};pending={};last_processed={};done=set()
+    _end=env_time('PAPER_SESSION_END', dt.time(15,30))
+    _flat=env_time('PAPER_FLAT_BY', dt.time(15,25))
     with journal.open("x") as f:
-        while dt.datetime.now(IST).time()<dt.time(15,30):
+        while dt.datetime.now(IST).time()<_end:
             now=dt.datetime.now(IST)
             for market in ("NIFTY","SENSEX"):
                 try:
@@ -44,7 +46,7 @@ def run():
                         pos["index"]=state
                         if event=="T1_REACHED":
                             emit(f,event="INDEX_2R_CONFIRMED",market=market,time=now.isoformat(),symbol=pos["contract"]["symbol"])
-                        if event in ("STOP","TARGET_3R") or now.time()>=dt.time(15,25):
+                        if event in ("STOP","TARGET_3R") or now.time()>=_flat:
                             q=api.full_quote(pos["contract"]["instrument_key"])
                             if abs((now-q.timestamp).total_seconds())>15 or q.bid<=0 or q.bid_qty<pos["quantity"]:
                                 emit(f,event="EXIT_QUOTE_UNAVAILABLE",market=market,time=now.isoformat(),reason=event)

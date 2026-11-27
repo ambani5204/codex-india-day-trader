@@ -9,7 +9,7 @@ import json
 import os
 import time
 from pathlib import Path
-from .core import IST
+from .core import IST, env_time
 from .upstox import INDICES, UpstoxReader, UpstoxError, select_atm, load_today_master
 from .ema9_fib_pivot_research import signals
 from .paper_sim import option_fees
@@ -63,7 +63,7 @@ def run_market(market, api, records, now, positions, finished, events, prior_cac
         pos=positions[key];s=pos["signal"];bull=pos["direction"]=="BULL"
         index_stop=bars[-1].close<=s["stop"] if bull else bars[-1].close>=s["stop"]
         index_target=bars[-1].close>=s["target"] if bull else bars[-1].close<=s["target"]
-        eod=now.time()>=dt.time(15,25)
+        eod=now.time()>=env_time('PAPER_FLAT_BY', dt.time(15,25))
         if track=="INTRADAY":
             if not (index_stop or index_target or eod):continue
             points=(bars[-1].close-pos["entry"])*(1 if bull else -1)
@@ -108,8 +108,9 @@ def main():
     path=OUT/(now.date().isoformat()+".jsonl")
     # A duplicate runner must not generate duplicate paper fills.
     if path.exists():raise RuntimeError("EMA9 V2 sidecar already started today")
+    _end=env_time('PAPER_SESSION_END', dt.time(15,30))
     with path.open("x") as journal:
-        while dt.datetime.now(IST).time()<dt.time(15,30):
+        while dt.datetime.now(IST).time()<_end:
             now=dt.datetime.now(IST)
             for market in ("NIFTY","SENSEX"):
                 try:run_market(market,api,records,now,positions,finished,events,prior_cache)

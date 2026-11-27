@@ -18,6 +18,25 @@ ORB_END = dt.time(9, 30)
 ENTRY_CUTOFF = dt.time(14, 45)
 INDEX_SYMBOLS = {'NSE:NIFTY 50', 'NSE:NIFTY BANK', 'BSE:SENSEX', 'NSE:NIFTY NEXT 50'}
 
+
+def env_time(name, default):
+    """Parse an HHMM env override (e.g. '1215') into a dt.time; else default.
+
+    Shared by the paper worker and sidecars for the two-job morning/afternoon
+    split (CHG-20261127-1610). Unset => default (legacy behaviour). Malformed
+    values raise ValueError so a misconfigured run fails closed.
+    """
+    import os
+    raw = os.environ.get(name, '').strip()
+    if not raw:
+        return default
+    if len(raw) != 4 or not raw.isdigit():
+        raise ValueError(name + ' must be HHMM, got ' + repr(raw))
+    hh, mm = int(raw[:2]), int(raw[2:])
+    if not (0 <= hh < 24 and 0 <= mm < 60):
+        raise ValueError(name + ' not a valid time: ' + raw)
+    return dt.time(hh, mm)
+
 @dataclass(frozen=True)
 class Bar:
     time: dt.datetime  # opening timestamp of candle, in IST
