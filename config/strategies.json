@@ -1,0 +1,86 @@
+{
+  "_comment": "ALGOBANI strategy config (strategy-spec-dhansetu-v1). PAPER ONLY. Every strategy is individually switchable; 'enabled' is false until that strategy has been validated in a paper session. Parameters are STARTING DEFAULTS, not any third party's values, and are logged per session. Times are IST HHMM.",
+  "common": {
+    "square_off_ist": "1505",
+    "no_new_entries_after_ist": "1445",
+    "options_buying_only": true,
+    "strike_step": {"NIFTY": 50, "BANKNIFTY": 100, "SENSEX": 100},
+    "default_qty": {"NIFTY": 65, "BANKNIFTY": 30, "SENSEX": 20},
+    "pre_open_health_check": true,
+    "latency_target_seconds": 1.0
+  },
+  "strategies": {
+    "S1_orb": {
+      "enabled": false,
+      "underlyings": ["SENSEX", "NIFTY", "BANKNIFTY"],
+      "range_start_ist": "0915", "range_end_ist": "1000",
+      "buffer_points": 0.0, "confirm_close": false, "entry_intrabar": true,
+      "max_trades": 3,
+      "range_width_max_mult": 2.0, "range_width_min_mult": 0.25, "gap_skip_pct": 1.5,
+      "risk": {
+        "NIFTY": {"sl": 30, "tp": 50, "max_trades": 5},
+        "BANKNIFTY": {"sl": 60, "tp": 80, "max_trades": 4},
+        "SENSEX": {"sl": 30, "tp": 70, "max_trades": 4}
+      }
+    },
+    "S2_supertrend_sma": {
+      "enabled": false,
+      "underlyings": ["NIFTY", "BANKNIFTY", "SENSEX"],
+      "timeframe_minutes": 5, "sma_n": 20, "supertrend_period": 10, "supertrend_mult": 3.0,
+      "always_in_market": true, "client_sl_tp": true,
+      "risk": {
+        "NIFTY": {"sl": 30, "tp": 50, "max_trades": 5},
+        "BANKNIFTY": {"sl": 60, "tp": 80, "max_trades": 4},
+        "SENSEX": {"sl": 30, "tp": 70, "max_trades": 4}
+      }
+    },
+    "S3_utbot_macd": {
+      "enabled": false,
+      "underlyings": ["BANKNIFTY", "NIFTY", "SENSEX"],
+      "timeframe_minutes": 5, "ut_a": 1.0, "ut_c": 10,
+      "macd_fast": 12, "macd_slow": 26, "macd_signal": 9, "confirm_within_bars": 0,
+      "mcx_enabled": false,
+      "risk": {
+        "NIFTY": {"sl": 30, "tp": 50, "max_trades": 5},
+        "BANKNIFTY": {"sl": 60, "tp": 80, "max_trades": 4},
+        "SENSEX": {"sl": 30, "tp": 70, "max_trades": 4}
+      }
+    },
+    "S4_buffer_breakout": {
+      "enabled": false,
+      "underlyings": ["NIFTY", "BANKNIFTY", "SENSEX"],
+      "ref_block_minutes": 15, "buffer_pct": 0.1, "evaluate_intrabar": false,
+      "risk": {
+        "NIFTY": {"sl": 30, "tp": 50, "max_trades": 5},
+        "BANKNIFTY": {"sl": 60, "tp": 80, "max_trades": 4},
+        "SENSEX": {"sl": 30, "tp": 70, "max_trades": 4}
+      }
+    },
+    "S5_sma_rsi": {
+      "enabled": false,
+      "underlyings": ["NIFTY", "BANKNIFTY", "SENSEX"],
+      "timeframe_minutes": 15, "sma_n": 20, "rsi_n": 14, "rsi_long": 55, "rsi_short": 45,
+      "risk": {
+        "NIFTY": {"sl": 30, "tp": 50, "max_trades": 5},
+        "BANKNIFTY": {"sl": 60, "tp": 80, "max_trades": 4},
+        "SENSEX": {"sl": 30, "tp": 70, "max_trades": 4}
+      }
+    },
+    "S6_equity_rsima_scanner": {
+      "enabled": false,
+      "timeframe": "daily", "rsi_n": 14, "rsi_ma_n": 14, "rsi_ma_threshold": 40,
+      "confirm_closes": 1, "scan_time_ist": "1535", "signal_log_only": true
+    },
+    "S7_reversal_v1": {
+      "enabled": false,
+      "underlyings": ["NIFTY", "BANKNIFTY", "SENSEX"],
+      "timeframe_minutes": 5, "level_merge_pct": 0.1, "tag_tolerance_pct": 0.05,
+      "wick_body_ratio": 2.0, "rr": 2.0, "max_trades": 3,
+      "risk": {
+        "NIFTY": {"sl": 30, "tp": 50, "max_trades": 3},
+        "BANKNIFTY": {"sl": 60, "tp": 80, "max_trades": 3},
+        "SENSEX": {"sl": 30, "tp": 70, "max_trades": 3}
+      }
+    }
+  }
+}
