@@ -1,0 +1,45 @@
+name: Publish Monitor Data
+
+# Publishes the PUBLIC AGGREGATE monitor data.json to the stable `monitor-data`
+# release, which the monitor app fetches. Aggregate only (no per-trade rows),
+# per the public-data policy. Decoupled from the session workflow: it restores
+# the day's private journals read-only, then refreshes the feed. Runs after
+# market close on weekdays and on manual dispatch (to seed).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 10 * * 1-5"   # 15:50 IST, after the 15:20 session close
+    - cron: "50 10 * * 1-5"   # 16:20 IST, retry
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore today's private journals (best-effort, read-only)
+        continue-on-error: true
+        env:
+          JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
+        run: python -m deploy.private_journal_restore || echo "no journals to restore"
+      - name: Build public aggregate data.json
+        run: |
+          set -e
+          DIR="trader/paper_upstox"
+          [ -d "$DIR" ] || DIR="$(mktemp -d)"   # no journals -> NO_SESSION
+          python -m deploy.monitor_feed --journal-dir "$DIR" --public --out data.json
+          cat data.json
+      - name: Update monitor-data release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release view monitor-data --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            && gh release upload monitor-data data.json --repo "$GITHUB_REPOSITORY" --clobber \
+            || gh release create monitor-data data.json --repo "$GITHUB_REPOSITORY" \
+                 --title "Algobani Monitor live data" \
+                 --notes "Public aggregate paper-session data for the monitor app. No raw quotes or per-trade rows."

@@ -343,7 +343,13 @@ function applyLive(d){
       <td class="r mono ${cls(r[6])}">${r[6]==null?"—":money(r[6])}</td></tr>`;}).join("")
     : `<tr><td colspan="7" class="empty">No closed trades yet</td></tr>`;
 }
-fetch("data.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(d=>{if(d)applyLive(d);}).catch(()=>{});
+const DATA_URL="https://github.com/ambani5204/codex-india-day-trader/releases/download/monitor-data/data.json";
+(async()=>{
+  for(const u of [DATA_URL,"data.json"]){
+    try{const r=await fetch(u,{cache:"no-store"});
+      if(r.ok){const d=await r.json();if(d){applyLive(d);return;}}}catch(e){}
+  }
+})();  // falls through to SAMPLE if no live feed is reachable
 </script>
 </body>
 </html>
