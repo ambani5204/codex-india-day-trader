@@ -9,6 +9,8 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,3 +41,13 @@ jobs:
           name: algobani-monitor-apk
           path: algobani-monitor-debug.apk
           if-no-files-found: error
+      - name: Publish APK to a Release (direct phone-installable link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh release delete monitor-apk --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create monitor-apk algobani-monitor-debug.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Algobani Monitor (debug APK)" \
+            --notes "Debug, sideloadable. PAPER monitor only. Built $(date -u +%FT%TZ) from ${GITHUB_SHA::7}. Install: open this APK on Android and allow install from this source."
