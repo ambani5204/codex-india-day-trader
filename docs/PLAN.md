@@ -98,3 +98,14 @@ complete without its own evidence. Rollback of this doc: git revert.
 ## Remaining (wall-clock bound)
 - Phase 9: >=10 real consecutive reconciled live sessions. First = Monday 2026-11-30. Cannot be compressed.
 - Phase 10: evidence-based readiness report — depends on Phase 9 data, so it opens only once real sessions accrue.
+
+## Phase 11 — CLOSED 2026-11-28 (realistic performance targets + goal tracker)
+Owner set a 10%/day target; project lead rejected it as mathematically impossible on any strategy (compounds past global market capacity in a year; forces ~100% capital risk per trade vs the 4% stop). Replaced with evidence-based FROZEN bands from our own EMA 9/15 backtest.
+- [x] S11.1: india_trader/performance_targets.py — FROZEN daily/weekly/monthly bands for Rs 15k; classify_day/week/month → GREEN/FLAT/RED/STOP_HIT/NO_DATA. Cadence 4–7 trades tracked separately.
+- [x] S11.2: deploy/daily_goal_check.py — reads monitor feed, writes goal_check.json, one-line verdict.
+- [x] S11.4: deploy/weekly_report.py — Mon–Fri reconciliation, per-day + per-strategy breakdown, classifies against weekly band.
+- [x] S11.3: mobile monitor Goal card — band visualisation, verdict pill, cadence, week verdict. publish-monitor-data workflow now generates goal_check.json and weekly_report.json alongside data.json.
+- Evidence: PR #112 (code), PR #113 (UI + feeds); feeds visible in the monitor-data release. Suite 536 green.
+- Realistic daily target band (Rs 15k): stop -600 / pessimistic -300 / expected +75 / optimistic +450. Weekly: stop -2000 / expected +375. Monthly: stop -5000 / expected +1650. 
+- Growth gate: Rs 15k → Rs 50k only after ≥10 green-band sessions in a month with ≤2 STOP_HIT days and win rate ≥45%.
+
