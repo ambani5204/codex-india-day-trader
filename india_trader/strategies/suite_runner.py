@@ -13,18 +13,25 @@ from __future__ import annotations
 
 from typing import Dict, List, Sequence
 
-from india_trader.strategies import buffer_breakout, sma_rsi, supertrend_sma
+from india_trader.strategies import (buffer_breakout, orb, reversal_v1, rsima_scanner,
+                                      sma_rsi, supertrend_sma, utbot_macd)
 from india_trader.strategies.common import CLOSE
 from india_trader.strategies.paper_exec import PaperExecutionEngine, RiskParams
 
-# Detectors that are implemented today. Maps strategy key -> signal fn.
+# All seven spec strategies now have detectors. Maps strategy key -> signal fn.
 DETECTORS = {
-    supertrend_sma.NAME: supertrend_sma.signals,
-    buffer_breakout.NAME: buffer_breakout.signals,
-    sma_rsi.NAME: sma_rsi.signals,
+    orb.NAME: orb.signals,                      # S1
+    supertrend_sma.NAME: supertrend_sma.signals,  # S2
+    utbot_macd.NAME: utbot_macd.signals,        # S3
+    buffer_breakout.NAME: buffer_breakout.signals,  # S4
+    sma_rsi.NAME: sma_rsi.signals,              # S5
+    rsima_scanner.NAME: rsima_scanner.signals,  # S6 (daily scanner)
+    reversal_v1.NAME: reversal_v1.signals,      # S7
 }
-AVAILABLE = tuple(DETECTORS)          # ("S2_supertrend_sma","S4_buffer_breakout","S5_sma_rsi")
-NO_DETECTOR_YET = ("S1_orb", "S3_utbot_macd", "S6_equity_rsima_scanner", "S7_reversal_v1")
+AVAILABLE = tuple(DETECTORS)
+NO_DETECTOR_YET = ()  # all S1-S7 implemented
+# S6 is a daily positional scanner; the intraday suite enables S1-S5 + S7 by default.
+INTRADAY = tuple(n for n in DETECTORS if n != rsima_scanner.NAME)
 
 
 class SuiteRunner:
@@ -68,9 +75,13 @@ class SuiteRunner:
 
 
 def resolve_enabled(raw: str) -> List[str]:
-    """Parse ALGOBANI_ENABLE_STRATEGIES. 'ALL'/'' -> every available detector."""
+    """Parse ALGOBANI_ENABLE_STRATEGIES. 'ALL'/'' -> every INTRADAY detector.
+
+    S6 is a daily scanner and is excluded from the intraday live suite; name it
+    explicitly to include it, or run it via the daily-scan path.
+    """
     raw = (raw or "").strip()
     if raw.upper() in ("", "ALL"):
-        return list(AVAILABLE)
+        return list(INTRADAY)
     wanted = [x.strip() for x in raw.split(",") if x.strip()]
     return [w for w in wanted if w in DETECTORS]
