@@ -135,6 +135,41 @@
         <div class="cell"><div class="k">Win rate</div><div class="v" id="dWin">—</div></div>
       </div>
 
+      <h2 class="sec">Goal · realistic band</h2>
+      <div class="card" style="padding:14px 13px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+          <div><div class="sname">Today's verdict</div>
+            <div class="smeta" id="goalMeta">awaiting session · band ₹-600 … ₹+450</div></div>
+          <div style="text-align:right"><span class="pill p-off" id="goalPill" style="font-size:10px;padding:4px 9px">NO DATA</span></div>
+        </div>
+        <!-- band visualisation: -600 … 0 … +450 -->
+        <div style="position:relative;height:24px;border-radius:8px;overflow:hidden;background:#0a1120;border:1px solid var(--line)">
+          <!-- red zone (-600 to -300) -->
+          <div style="position:absolute;left:0;top:0;bottom:0;width:28.6%;background:rgba(255,93,93,.25)"></div>
+          <!-- flat zone (-300 to +150) -->
+          <div style="position:absolute;left:28.6%;top:0;bottom:0;width:42.9%;background:rgba(138,151,173,.15)"></div>
+          <!-- green zone (+150 to +450) -->
+          <div style="position:absolute;left:71.4%;top:0;bottom:0;width:28.6%;background:rgba(31,207,122,.22)"></div>
+          <!-- zero line -->
+          <div style="position:absolute;left:57.1%;top:0;bottom:0;width:1px;background:var(--mut);opacity:.5"></div>
+          <!-- actual marker -->
+          <div id="goalMarker" style="position:absolute;top:-2px;bottom:-2px;left:57.1%;width:3px;background:var(--blue);border-radius:2px;transition:left .3s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--faint);margin-top:4px">
+          <span>stop ₹-600</span><span>₹0</span><span>expected ₹+75</span><span>+₹450</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:12px;gap:9px">
+          <div style="flex:1;background:#0a1120;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+            <div class="k" style="font-size:9.5px">Cadence (4–7)</div>
+            <div class="v" style="font-size:14px;margin-top:2px" id="goalCadence">—</div>
+          </div>
+          <div style="flex:1;background:#0a1120;border:1px solid var(--line);border-radius:10px;padding:9px 11px">
+            <div class="k" style="font-size:9.5px">Week (Mon–Fri)</div>
+            <div class="v" style="font-size:14px;margin-top:2px" id="goalWeek">—</div>
+          </div>
+        </div>
+      </div>
+
       <h2 class="sec">Indices · NIFTY first</h2>
       <div class="idx">
         <div class="card idxcard first">
@@ -320,6 +355,8 @@ function applyLive(d){
               NO_SESSION:["status closed","NO SESSION"]}[d.status]||["status closed",d.status||"—"];
   document.getElementById("statusPill").className = st[0];
   document.getElementById("statusTxt").textContent = st[1];
+  // Phase 11 Goal card: classify today vs the frozen Rs 15k band.
+  updateGoal(d.status, d.day||{});
   if(d.day){
     const pnl=d.day.net_pnl||0;
     const el=document.getElementById("dPnl"); el.textContent=money(pnl); el.className="v "+cls(pnl);
@@ -353,11 +390,71 @@ function applyLive(d){
       <td class="r mono ${cls(r[6])}">${r[6]==null?"—":money(r[6])}</td></tr>`;}).join("")
     : `<tr><td colspan="7" class="empty">No closed trades yet</td></tr>`;
 }
-const DATA_URL="https://github.com/ambani5204/codex-india-day-trader/releases/download/monitor-data/data.json";
+
+// ---- Goal card: Phase 11 frozen bands (mirrors india_trader/performance_targets.py) ----
+const BAND = {pessimistic:-300, expected:75, optimistic:450, hard_stop:-600};
+const CADENCE = {min:4, max:7};
+function classifyDay(net, trades, status){
+  if(status==="NO_SESSION" || net==null) return {v:"NO_DATA", tag:"NO DATA", cls:"p-off"};
+  if(net <= BAND.hard_stop)        return {v:"STOP_HIT", tag:"STOP HIT ✗", cls:"p-lose"};
+  if(net >= BAND.expected*0.5)     return {v:"GREEN",    tag:"GREEN ✓",    cls:"p-win"};
+  if(net >= BAND.pessimistic)      return {v:"FLAT",     tag:"FLAT ·",     cls:"p-off"};
+  return {v:"RED", tag:"RED ↓", cls:"p-lose"};
+}
+function updateGoal(status, day){
+  const net = day.net_pnl, trades = day.trades||0;
+  const r = classifyDay(net, trades, status);
+  const pill = document.getElementById("goalPill");
+  pill.textContent = r.tag;
+  pill.className = "pill "+r.cls;
+  pill.style.cssText = "font-size:10px;padding:4px 9px";
+  // marker: map P&L [-600 .. +450] to 0%..100%. clamp.
+  const left = Math.max(0, Math.min(100, ((net==null?0:net) - BAND.hard_stop) / (BAND.optimistic - BAND.hard_stop) * 100));
+  document.getElementById("goalMarker").style.left = left + "%";
+  document.getElementById("goalMarker").style.background =
+    r.v==="GREEN"?"var(--green)":r.v==="STOP_HIT"||r.v==="RED"?"var(--red)":"var(--blue)";
+  // cadence
+  let cad = "—";
+  if (status!=="NO_SESSION"){
+    if (trades===0) cad = "no trades · 0 / 4–7";
+    else if (trades<CADENCE.min) cad = `under · ${trades} / 4–7`;
+    else if (trades<=CADENCE.max) cad = `on target · ${trades} / 4–7 ✓`;
+    else cad = `over · ${trades} / 4–7`;
+  }
+  document.getElementById("goalCadence").textContent = cad;
+  document.getElementById("goalMeta").textContent =
+    status==="NO_SESSION" ? "awaiting session · band ₹-600 … ₹+450"
+      : `net ₹${(net||0).toLocaleString("en-IN",{signDisplay:"always"})} · band ₹${BAND.hard_stop} … ₹${BAND.optimistic}`;
+  // Weekly placeholder: real weekly comes from a separate feed (weekly_report.py).
+  document.getElementById("goalWeek").textContent = status==="NO_SESSION" ? "—" : "see weekly report";
+}
+
+const REL="https://github.com/ambani5204/codex-india-day-trader/releases/download/monitor-data/";
+async function fetchJson(urls){
+  for(const u of urls){
+    try{const r=await fetch(u,{cache:"no-store"}); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
 (async()=>{
-  for(const u of [DATA_URL,"data.json"]){
-    try{const r=await fetch(u,{cache:"no-store"});
-      if(r.ok){const d=await r.json();if(d){applyLive(d);return;}}}catch(e){}
+  const d = await fetchJson([REL+"data.json","data.json"]);
+  if(d){
+    applyLive(d);
+    // Overlay authoritative goal + weekly feeds when available (computed by deploy/).
+    const g = await fetchJson([REL+"goal_check.json","goal_check.json"]);
+    if(g && g.band){
+      const pill=document.getElementById("goalPill");
+      const tag={GREEN:"GREEN ✓",FLAT:"FLAT ·",RED:"RED ↓",STOP_HIT:"STOP HIT ✗",NO_DATA:"NO DATA"}[g.verdict]||g.verdict;
+      const klass={GREEN:"p-win",FLAT:"p-off",RED:"p-lose",STOP_HIT:"p-lose",NO_DATA:"p-off"}[g.verdict]||"p-off";
+      pill.textContent=tag; pill.className="pill "+klass;
+    }
+    const w = await fetchJson([REL+"weekly_report.json","weekly_report.json"]);
+    if(w && w.week){
+      const v=w.week; const tag={GREEN:"GREEN",FLAT:"flat",RED:"red",STOP_HIT:"stop",NO_DATA:"—"}[v.verdict]||v.verdict;
+      document.getElementById("goalWeek").textContent =
+        v.sessions? `${tag} · ₹${(v.net_pnl||0).toLocaleString("en-IN",{signDisplay:"always"})} / ${v.sessions} day(s)` : "—";
+    }
+    return;
   }
   // No feed reachable: show OFFLINE, never fabricated data.
   const b=document.getElementById("srcBadge");

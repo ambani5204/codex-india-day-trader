@@ -26,20 +26,24 @@ jobs:
         env:
           JOURNAL_REPO_TOKEN: ${{ secrets.JOURNAL_REPO_TOKEN }}
         run: python -m deploy.private_journal_restore || echo "no journals to restore"
-      - name: Build public aggregate data.json
+      - name: Build public aggregate data.json + goal_check + weekly_report
         run: |
           set -e
           DIR="trader/paper_upstox"
           [ -d "$DIR" ] || DIR="$(mktemp -d)"   # no journals -> NO_SESSION
           python -m deploy.monitor_feed --journal-dir "$DIR" --public --out data.json
+          python -m deploy.daily_goal_check --journal-dir "$DIR" --out goal_check.json
+          python -m deploy.weekly_report --journal-dir "$DIR" --out weekly_report.json
           cat data.json
+          cat goal_check.json
+          cat weekly_report.json
       - name: Update monitor-data release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
           gh release view monitor-data --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            && gh release upload monitor-data data.json --repo "$GITHUB_REPOSITORY" --clobber \
-            || gh release create monitor-data data.json --repo "$GITHUB_REPOSITORY" \
+            && gh release upload monitor-data data.json goal_check.json weekly_report.json --repo "$GITHUB_REPOSITORY" --clobber \
+            || gh release create monitor-data data.json goal_check.json weekly_report.json --repo "$GITHUB_REPOSITORY" \
                  --title "Algobani Monitor live data" \
                  --notes "Public aggregate paper-session data for the monitor app. No raw quotes or per-trade rows."
