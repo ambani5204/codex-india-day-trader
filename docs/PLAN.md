@@ -79,3 +79,22 @@ complete without its own evidence. Rollback of this doc: git revert.
 ## Remaining (honest)
 - Phases 6–8, 10: subsequent engineering milestones per #17.
 - **Phase 9 cannot be compressed:** it requires ≥10 real, consecutive, reconciled live-market paper sessions. First live validation is the two-job split on Monday 2026-11-30 (auto-starts 09:07 IST). Each real session accrues one toward the ten; this is wall-clock bound and no amount of agent parallelism shortens it.
+
+## Phase 6 — CLOSED 2026-11-28 (durable worker, lease, recovery, incidents)
+- [x] Durable single-writer lease (india_trader/lease.py), recovery classifier (recovery.py: only a paused handoff auto-resumes; crash/unresolved never auto-retry), append-only incident log (incidents.py). ADR-0003. Live wiring deferred until after Monday (inert revert). PR #95.
+
+## Phase 7 — CLOSED 2026-11-28 (versioned read-only API + NIFTY-first Android monitor)
+- [x] Versioned read-only API (india_trader/read_api.py, API_VERSION 1; pure read, asserted no writes). PR #102.
+- [x] NIFTY-first Android monitor: debug APK built in CI (build-apk.yml -> Release monitor-apk, Capacitor WebView) + live data feed (deploy/monitor_feed.py) + monitor artifact with LIVE/SAMPLE badge. PR #99/#100/#101.
+- Note: debug APK (sideloadable), not a Play-Store signed release.
+
+## Phase 8 — CLOSED 2026-11-28 (OOS walk-forward, frozen thresholds)
+- [x] Walk-forward qualification (india_trader/strategies/walk_forward.py): strategies qualify only by clearing FROZEN thresholds on out-of-sample windows; 60% win rate is the aspirational target, separate from the hard floor; win rate alone cannot qualify (PF + drawdown + net gates). PR #103.
+- Live OOS numbers feed from the real-candle backtest workflow; this is the gate framework.
+
+## All seven strategy detectors — 2026-11-28
+- [x] S1 ORB, S2 Supertrend+SMA, S3 UT Bot+MACD, S4 Buffer Breakout, S5 SMA+RSI, S6 RSI-MA scanner (daily), S7 Reversal v1. Registered in the paper suite (suite_runner); intraday "ALL" = S1-S5+S7, S6 on the daily path. Live suite env-gated off for Monday (RUN_STRATEGY_SUITE). PR #96/#98.
+
+## Remaining (wall-clock bound)
+- Phase 9: >=10 real consecutive reconciled live sessions. First = Monday 2026-11-30. Cannot be compressed.
+- Phase 10: evidence-based readiness report — depends on Phase 9 data, so it opens only once real sessions accrue.
