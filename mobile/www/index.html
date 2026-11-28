@@ -210,7 +210,6 @@
 // P&L / trades come only from the live feed; zero until a real session runs.
 const ROSTER = [
   {name:"EMA 9/15", tag:["ENABLED","p-on"], verdict:["EDGE","p-win"]},
-  {name:"EMA 9/15 V2", tag:["SIDECAR","p-off"], verdict:["RESEARCH","p-off"]},
   {name:"3-Candle", tag:["SIDECAR","p-off"], verdict:["RESEARCH","p-off"]},
   {name:"ORB (S1)", tag:["OFF","p-off"], verdict:["LOSES","p-lose"]},
   {name:"Supertrend + SMA (S2)", tag:["OFF","p-off"], verdict:["LOSES","p-lose"]},
@@ -226,7 +225,6 @@ const orders = [];
 const history = [];
 const configs = [
   {name:"EMA 9/15", on:true, rows:[["Market","NIFTY + SENSEX"],["Qty","65 / 20"],["Trades / day","5"],["SL points","30"],["TP points","50"],["Trailing","on · 10 / 6"],["Day max loss","₹600"]]},
-  {name:"EMA 9/15 V2", on:false, rows:[["Market","NIFTY"],["Type","research sidecar"],["Qty","65"],["SL points","30"],["TP points","50"]]},
   {name:"3-Candle", on:false, rows:[["Market","NIFTY"],["Type","research sidecar"],["Qty","65"],["SL points","30"],["TP points","50"]]},
   {name:"ORB (S1)", on:false, rows:[["Market","SENSEX"],["Qty","20"],["Range","09:15–10:00"],["Trades / day","4"],["SL points","30"],["TP points","70"]]},
   {name:"Supertrend + SMA (S2)", on:false, rows:[["Market","NIFTY"],["Qty","65"],["Trades / day","5"],["SL points","30"],["TP points","50"],["SMA / ST","20 / 10×3"]]},
@@ -308,7 +306,7 @@ tabs.forEach(tb=>tb.onclick=()=>{
 // ---- LIVE data: load the published feed; no sample data anywhere ----
 const VERDICT = {            // honest backtest verdicts, keyed by strategy name
   "EMA9_EMA15_20DEG_85BODY":["EDGE","p-win"], "EMA_9_15":["EDGE","p-win"],
-  "EMA9_V2":["RESEARCH","p-off"], "THREE_CANDLE":["RESEARCH","p-off"],
+  "THREE_CANDLE":["RESEARCH","p-off"],
   "S1_orb":["LOSES","p-lose"], "S2_supertrend_sma":["LOSES","p-lose"],
   "S3_utbot_macd":["NEW","p-off"], "S4_buffer_breakout":["NIFTY-ONLY","p-win"],
   "S5_sma_rsi":["MIXED","p-off"], "S6_equity_rsima_scanner":["NEW","p-off"],
