@@ -5,7 +5,7 @@ import unittest
 
 from india_trader.core import Bar
 from india_trader.strategies.paper_exec import OptionQuote, PaperExecutionEngine, RiskParams
-from india_trader.strategies.suite_runner import (AVAILABLE, NO_DETECTOR_YET,
+from india_trader.strategies.suite_runner import (AVAILABLE, INTRADAY,
                                                   SuiteRunner, resolve_enabled)
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
@@ -34,18 +34,19 @@ RISK = {s: RiskParams(sl_points=30, tp_points=50, max_trades=10, qty=50, exchang
 
 class Suite(unittest.TestCase):
     def test_resolve_all(self):
-        self.assertEqual(resolve_enabled("ALL"), list(AVAILABLE))
-        self.assertEqual(resolve_enabled(""), list(AVAILABLE))
+        # "ALL" = intraday set (S6 is a daily scanner, excluded)
+        self.assertEqual(resolve_enabled("ALL"), list(INTRADAY))
+        self.assertEqual(resolve_enabled(""), list(INTRADAY))
         self.assertEqual(resolve_enabled("S4_buffer_breakout"), ["S4_buffer_breakout"])
+        self.assertEqual(len(AVAILABLE), 7)  # all S1-S7 implemented
 
     def test_unknown_detector_rejected(self):
         with self.assertRaises(ValueError):
-            SuiteRunner(PaperExecutionEngine(Provider()), ["S1_orb"], RISK)
-        self.assertTrue(set(NO_DETECTOR_YET).isdisjoint(AVAILABLE))
+            SuiteRunner(PaperExecutionEngine(Provider()), ["S99_nope"], RISK)
 
     def test_all_three_trade_the_session(self):
         eng = PaperExecutionEngine(Provider())
-        suite = SuiteRunner(eng, list(AVAILABLE), RISK)
+        suite = SuiteRunner(eng, list(INTRADAY), RISK)
         bars = wave()
         for k in range(5, len(bars) + 1):
             suite.step("NIFTY", bars[:k], bars[k - 1].time + dt.timedelta(minutes=5))
@@ -56,7 +57,7 @@ class Suite(unittest.TestCase):
 
     def test_each_book_is_isolated_per_strategy(self):
         eng = PaperExecutionEngine(Provider())
-        suite = SuiteRunner(eng, list(AVAILABLE), RISK)
+        suite = SuiteRunner(eng, list(INTRADAY), RISK)
         bars = wave()
         for k in range(5, len(bars) + 1):
             suite.step("NIFTY", bars[:k], bars[k - 1].time + dt.timedelta(minutes=5))
