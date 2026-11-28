@@ -58,7 +58,7 @@ def _iter_events(paths: Iterable[Path]):
                 yield e
 
 
-def build(journal_dir: str, session_date: str | None = None) -> dict:
+def build(journal_dir: str, session_date: str | None = None, public: bool = False) -> dict:
     d = Path(journal_dir)
     paths = sorted(d.glob("*.jsonl")) if d.exists() else []
     events = list(_iter_events(paths))
@@ -108,7 +108,7 @@ def build(journal_dir: str, session_date: str | None = None) -> dict:
             "win": f"{round(100*len(w)/len(good))}%" if good else "—",
         })
 
-    return {
+    out = {
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "session_date": session_date,
         "status": status,
@@ -123,6 +123,12 @@ def build(journal_dir: str, session_date: str | None = None) -> dict:
         "history": [[t, s, sym, i, o, r, (round(p, 2) if p is not None else None)]
                     for (t, s, sym, i, o, r, p) in closed[-40:]],
     }
+    if public:
+        # Policy: public feed is AGGREGATE ONLY (no per-trade signals/history).
+        out["signals"] = []
+        out["history"] = []
+        out["detail_private"] = True
+    return out
 
 
 def _short_time(ts: str) -> str:
@@ -138,8 +144,9 @@ def main():
     ap.add_argument("--journal-dir", default="trader/paper_upstox")
     ap.add_argument("--out", default="trader/monitor_data.json")
     ap.add_argument("--date", default=None)
+    ap.add_argument("--public", action="store_true", help="aggregate only (no per-trade rows)")
     a = ap.parse_args()
-    data = build(a.journal_dir, a.date)
+    data = build(a.journal_dir, a.date, public=a.public)
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(json.dumps(data, indent=2))
     print(f"wrote {a.out}: status={data['status']} trades={data['day']['trades']} "
