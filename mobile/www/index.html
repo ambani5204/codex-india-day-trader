@@ -121,39 +121,39 @@
       <div class="logo">A</div>
       <div><b>Algobani</b><span>PAPER MONITOR</span></div>
     </div>
-    <div class="status" id="statusPill"><span class="dot"></span><span id="statusTxt">RUNNING</span></div>
+    <div class="status closed" id="statusPill"><span class="dot"></span><span id="statusTxt">CONNECTING…</span></div>
   </header>
-  <div class="paper">🔒 PAPER — NO REAL ORDERS · simulated option fills <span id="srcBadge" style="margin-left:8px;padding:1px 7px;border-radius:5px;background:#3a2410;color:var(--amber);font-size:9px">SAMPLE DATA</span></div>
+  <div class="paper">🔒 PAPER — NO REAL ORDERS · simulated option fills <span id="srcBadge" style="margin-left:8px;padding:1px 7px;border-radius:5px;background:#1b2130;color:var(--mut);font-size:9px">CONNECTING…</span></div>
 
   <main>
     <!-- DASHBOARD -->
     <section class="view on" id="v-dash">
       <h2 class="sec">Today · <span id="today"></span></h2>
       <div class="day">
-        <div class="cell"><div class="k">Net P&L</div><div class="v pos" id="dPnl">+₹1,842</div></div>
-        <div class="cell"><div class="k">Trades</div><div class="v" id="dTr">7</div></div>
-        <div class="cell"><div class="k">Win rate</div><div class="v" id="dWin">57%</div></div>
+        <div class="cell"><div class="k">Net P&L</div><div class="v" id="dPnl">₹0</div></div>
+        <div class="cell"><div class="k">Trades</div><div class="v" id="dTr">0</div></div>
+        <div class="cell"><div class="k">Win rate</div><div class="v" id="dWin">—</div></div>
       </div>
 
       <h2 class="sec">Indices · NIFTY first</h2>
       <div class="idx">
         <div class="card idxcard first">
           <div class="idxL"><div class="tick t-nifty">NF</div>
-            <div><div class="idxname">NIFTY <span class="badge live">IN TRADE</span></div>
-            <div class="idxsub">EMA 9/15 · CE · qty 65</div></div></div>
-          <div class="idxR"><div class="idxpx mono">25,912.40</div><div class="idxchg pos">+78.20 (0.30%)</div></div>
+            <div><div class="idxname">NIFTY <span class="badge flat">—</span></div>
+            <div class="idxsub">EMA 9/15 · qty 65</div></div></div>
+          <div class="idxR"><div class="idxpx mono">—</div><div class="idxsub">awaiting session</div></div>
         </div>
         <div class="card idxcard">
           <div class="idxL"><div class="tick t-sensex">SX</div>
-            <div><div class="idxname">SENSEX <span class="badge flat">FLAT</span></div>
-            <div class="idxsub">ORB · idle</div></div></div>
-          <div class="idxR"><div class="idxpx mono">84,730.1</div><div class="idxchg pos">+201.4 (0.24%)</div></div>
+            <div><div class="idxname">SENSEX <span class="badge flat">—</span></div>
+            <div class="idxsub">ORB</div></div></div>
+          <div class="idxR"><div class="idxpx mono">—</div><div class="idxsub">awaiting session</div></div>
         </div>
         <div class="card idxcard">
           <div class="idxL"><div class="tick t-bank">BN</div>
-            <div><div class="idxname">BANKNIFTY <span class="badge flat">FLAT</span></div>
+            <div><div class="idxname">BANKNIFTY <span class="badge flat">—</span></div>
             <div class="idxsub">disabled</div></div></div>
-          <div class="idxR"><div class="idxpx mono">57,064.8</div><div class="idxchg neg">−88.6 (0.16%)</div></div>
+          <div class="idxR"><div class="idxpx mono">—</div><div class="idxsub">—</div></div>
         </div>
       </div>
 
@@ -205,30 +205,22 @@
 </div>
 
 <script>
-// ---- SAMPLE paper data (illustrative UI data, not real session results) ----
-const stratPnl = [
-  {name:"EMA 9/15", tag:["ENABLED","p-on"], verdict:["EDGE","p-win"], pnl:2118, trades:4, wr:"75%"},
-  {name:"Buffer Breakout (S4)", tag:["SWITCHABLE","p-off"], verdict:["NIFTY-ONLY","p-win"], pnl:0, trades:0, wr:"—"},
-  {name:"SMA + RSI (S5)", tag:["SWITCHABLE","p-off"], verdict:["MIXED","p-off"], pnl:0, trades:0, wr:"—"},
-  {name:"Supertrend + SMA (S2)", tag:["OFF","p-off"], verdict:["LOSES","p-lose"], pnl:0, trades:0, wr:"—"},
-  {name:"ORB", tag:["OFF","p-off"], verdict:["LOSES","p-lose"], pnl:-276, trades:3, wr:"33%"},
+// ---- No sample data. Honest empty state until the live feed loads. ----
+// Strategy roster = fixed facts (names, enablement, backtest verdict), NOT session data.
+// P&L / trades come only from the live feed; zero until a real session runs.
+const ROSTER = [
+  {name:"EMA 9/15", tag:["ENABLED","p-on"], verdict:["EDGE","p-win"]},
+  {name:"Buffer Breakout (S4)", tag:["SWITCHABLE","p-off"], verdict:["NIFTY-ONLY","p-win"]},
+  {name:"SMA + RSI (S5)", tag:["SWITCHABLE","p-off"], verdict:["MIXED","p-off"]},
+  {name:"Supertrend + SMA (S2)", tag:["OFF","p-off"], verdict:["LOSES","p-lose"]},
+  {name:"ORB (S1)", tag:["OFF","p-off"], verdict:["LOSES","p-lose"]},
+  {name:"UT Bot + MACD (S3)", tag:["OFF","p-off"], verdict:["NEW","p-off"]},
+  {name:"Reversal (S7)", tag:["OFF","p-off"], verdict:["NEW","p-off"]},
 ];
-const signals = [
-  ["09:20:05","NIFTY","25800 CE","buy-O","25,856"],
-  ["10:35:10","NIFTY","25750 PE","sell-C_O","25,766"],
-  ["11:48:40","NIFTY","25800 CE","buy-O","25,803"],
-  ["13:02:15","SENSEX","84500 PE","sell-O","84,470"],
-  ["15:05:00","NIFTY","—","sell-C","25,912"],
-];
-const orders = [
-  {sym:"NIFTY25800CE", in:"101.2", ltp:"138.4", sl:"71.2", tp:"151.2", pnl:2418, reason:"OPEN"},
-  {sym:"SENSEX84500PE", in:"142.0", ltp:"128.6", sl:"112.0", tp:"212.0", pnl:-268, reason:"SL watch"},
-];
-const history = [
-  ["09:20","EMA 9/15","NIFTY25800CE","101.2","151.2","TP",3185],
-  ["10:35","EMA 9/15","NIFTY25750PE","88.4","71.9","SL",-1072],
-  ["11:05","ORB","SENSEX84500PE","140.0","128.0","EOD",-276],
-];
+const stratPnl = ROSTER.map(s=>({...s, pnl:0, trades:0, wr:"—"}));
+const signals = [];
+const orders = [];
+const history = [];
 const configs = [
   {name:"EMA 9/15", on:true, rows:[["Market","NIFTY first"],["Qty","65"],["Trades / day","5"],["SL points","30"],["TP points","50"],["Trailing","on · 10 / 6"],["Day max loss","₹600"]]},
   {name:"Buffer Breakout (S4)", on:false, rows:[["Market","NIFTY"],["Qty","65"],["Trades / day","4"],["SL points","30"],["TP points","60"],["Trailing","off"]]},
@@ -252,10 +244,11 @@ document.getElementById("stratPnl").innerHTML = stratPnl.map(s=>`
   </div>`).join("");
 
 // signals
-document.getElementById("sigBody").innerHTML = signals.map(r=>{
-  const t = r[3].startsWith("buy")?"ce":"pe";
+document.getElementById("sigBody").innerHTML = signals.length? signals.map(r=>{
+  const t = String(r[3]).startsWith("buy")?"ce":"pe";
   return `<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>
-    <td><span class="tag ${t}">${r[3]}</span></td><td class="r mono">${r[4]}</td></tr>`;}).join("");
+    <td><span class="tag ${t}">${r[3]}</span></td><td class="r mono">${r[4]}</td></tr>`;}).join("")
+  : `<tr><td colspan="5" class="empty">No signals yet</td></tr>`;
 
 // orders
 document.getElementById("ordBody").innerHTML = orders.length? orders.map(o=>`
@@ -265,12 +258,13 @@ document.getElementById("ordBody").innerHTML = orders.length? orders.map(o=>`
   : `<tr><td colspan="7" class="empty">No open orders</td></tr>`;
 
 // history
-document.getElementById("histBody").innerHTML = history.map(r=>{
+document.getElementById("histBody").innerHTML = history.length? history.map(r=>{
   const ex = r[5]==="TP"?"ok":r[5]==="SL"?"fail":"kill";
   return `<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>
     <td class="r mono">${r[3]}</td><td class="r mono">${r[4]}</td>
     <td><span class="tag ${ex}">${r[5]}</span></td>
-    <td class="r mono ${cls(r[6])}">${money(r[6])}</td></tr>`;}).join("");
+    <td class="r mono ${cls(r[6])}">${money(r[6])}</td></tr>`;}).join("")
+  : `<tr><td colspan="7" class="empty">No closed trades yet</td></tr>`;
 
 // strategy config
 document.getElementById("stratCfg").innerHTML = configs.map((c,i)=>`
@@ -302,7 +296,7 @@ tabs.forEach(tb=>tb.onclick=()=>{
   document.querySelector("main").scrollTop=0;
 });
 
-// ---- LIVE data: load monitor_data.json (from deploy/monitor_feed.py); fall back to SAMPLE ----
+// ---- LIVE data: load the published feed; no sample data anywhere ----
 const VERDICT = {            // honest backtest verdicts, keyed by strategy name
   "EMA9_EMA15_20DEG_85BODY":["EDGE","p-win"], "EMA_9_15":["EDGE","p-win"],
   "S4_buffer_breakout":["NIFTY-ONLY","p-win"], "S5_sma_rsi":["MIXED","p-off"],
@@ -323,13 +317,20 @@ function applyLive(d){
     document.getElementById("dTr").textContent=d.day.trades??"—";
     document.getElementById("dWin").textContent=d.day.win_rate||"—";
   }
-  if(Array.isArray(d.strategies)) document.getElementById("stratPnl").innerHTML =
-    (d.strategies.length?d.strategies:[{name:"—",pnl:0,trades:0,win:"—"}]).map(s=>{
-      const v=VERDICT[s.name]||["",""];
+  if(Array.isArray(d.strategies)){
+    // When the feed has traded strategies, show those; otherwise keep the full
+    // roster with real zeros (never fabricated numbers).
+    const rows = d.strategies.length
+      ? d.strategies.map(s=>({name:s.name, pnl:s.pnl, trades:s.trades, wr:s.win, verdict:VERDICT[s.name]||["",""], tag:null}))
+      : stratPnl;
+    document.getElementById("stratPnl").innerHTML = rows.map(s=>{
+      const v=s.verdict||["",""];
       return `<div class="srow"><div class="sL"><div class="sname">${s.name}
+        ${s.tag?`<span class="pill ${s.tag[1]}">${s.tag[0]}</span>`:""}
         ${v[0]?`<span class="pill ${v[1]}">${v[0]}</span>`:""}</div>
-        <div class="smeta">${s.trades} trades · win ${s.win}</div></div>
+        <div class="smeta">${s.trades} trades · win ${s.wr}</div></div>
         <div class="sR"><div class="spnl ${cls(s.pnl)}">${s.pnl?money(s.pnl):"—"}</div></div></div>`;}).join("");
+  }
   if(Array.isArray(d.signals)) document.getElementById("sigBody").innerHTML = d.signals.length?
     d.signals.map(r=>{const t=String(r[3]).toLowerCase().includes("pe")||String(r[3]).startsWith("sell")?"pe":"ce";
       return `<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>
@@ -349,7 +350,11 @@ const DATA_URL="https://github.com/ambani5204/codex-india-day-trader/releases/do
     try{const r=await fetch(u,{cache:"no-store"});
       if(r.ok){const d=await r.json();if(d){applyLive(d);return;}}}catch(e){}
   }
-})();  // falls through to SAMPLE if no live feed is reachable
+  // No feed reachable: show OFFLINE, never fabricated data.
+  const b=document.getElementById("srcBadge");
+  b.textContent="OFFLINE";
+  document.getElementById("statusTxt").textContent="OFFLINE";
+})();
 </script>
 </body>
 </html>
