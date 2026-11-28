@@ -1,0 +1,12 @@
+{
+  "_comment": "NSE/BSE trading holidays. PARTIAL — fixed-date national holidays only, which I can state with confidence. The lunar/variable holidays (Holi, Good Friday, Eid, Ram Navami, Mahavir Jayanti, Ganesh Chaturthi, Dussehra, Diwali/Laxmi Pujan, Guru Nanak Jayanti, Bakri Eid, Muharram) MUST be added from the official NSE/BSE holiday circular for each year — they are NOT fabricated here. is_trading_day() fails SAFE: a date not listed is treated as a trading day and real market data confirms it, so a missing holiday only causes a harmless empty session, never a wrong trade.",
+  "source": "fixed-date national holidays; variable dates pending official NSE circular",
+  "holidays": {
+    "2026": [
+      {"date": "2026-01-26", "name": "Republic Day"},
+      {"date": "2026-05-01", "name": "Maharashtra Day"},
+      {"date": "2026-10-02", "name": "Gandhi Jayanti"},
+      {"date": "2026-12-25", "name": "Christmas"}
+    ]
+  }
+}
