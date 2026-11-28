@@ -51,3 +51,11 @@ ops/rollback_manifest.json, and keep the change a single-parent git-only commit 
 ## Change control
 This document starts Phase 1. Phases 2–10 remain gated in order; no phase is claimed
 complete without its own evidence. Rollback of this doc: git revert.
+
+## Phase 2 — CLOSED 2026-11-28 (contracts, event ledger, CI, schema, security)
+- [x] Contracts — versioned event-ledger contract (india_trader/event_ledger.py, SCHEMA_VERSION 1.0): universal + per-event required fields, ordering invariants, fail-closed validator.
+- [x] Event ledger — validator confirmed VALID against the real 2026-11-27 NIFTY+SENSEX journals.
+- [x] CI — test.yml runs the full suite incl. both contracts on 3.10/3.11/3.12 on every push/PR; a violation blocks merge.
+- [x] Schema — EVENT_REQUIRED per-event schema + Firestore schema source map (docs/audit/FIRESTORE_SCHEMA_SOURCE_MAP_20261120.md).
+- [x] Security — security contract (tests/test_security_contract.py): GET-only market data, no order placement, live session forces allow_live_orders=False, no hardcoded secrets.
+- Evidence: PR #89 (CHG-20261128-1115); docs/CONTRACTS.md. Engineering deliverable, no market-day gate.
