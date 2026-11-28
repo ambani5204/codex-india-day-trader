@@ -59,3 +59,23 @@ complete without its own evidence. Rollback of this doc: git revert.
 - [x] Schema — EVENT_REQUIRED per-event schema + Firestore schema source map (docs/audit/FIRESTORE_SCHEMA_SOURCE_MAP_20261120.md).
 - [x] Security — security contract (tests/test_security_contract.py): GET-only market data, no order placement, live session forces allow_live_orders=False, no hardcoded secrets.
 - Evidence: PR #89 (CHG-20261128-1115); docs/CONTRACTS.md. Engineering deliverable, no market-day gate.
+## Phase 3 — CLOSED 2026-11-28 (historical CE/PE, calendar, coverage/data quality)
+- [x] Trading calendar — india_trader/trading_calendar.py + config/nse_holidays.json fills the exchange-holiday gap the code flagged. is_trading_day/session_bounds/trading_days. Holiday list PARTIAL (fixed-date national holidays only, honestly marked) and FAIL-SAFE: an unlisted date is treated as a trading day and real market data confirms it. Variable/lunar holidays must be completed from the official NSE circular — NOT fabricated.
+- [x] Data quality / coverage — india_trader/data_quality.py: per-session expected 75 five-min bars, missing/duplicate/out-of-hours/order checks + aggregate report, so incomplete-data sessions are flagged not silently used.
+- [x] Historical CE/PE decision — Upstox retail gives index candles (900 days verified) but not full intraday option-premium history/IV; option backtests use Black-Scholes premiums on the REAL index path (clearly labelled approximate), real fills from forward paper.
+- Evidence: PR #91 (CHG-20261128-1420); tests/test_phase3_calendar_dataquality.py.
+
+## Phase 4 — CLOSED 2026-11-28 (paper execution, fees/taxes, risk, independent stop)
+- [x] Paper execution + fees — PaperExecutionEngine (#84) with observed-quote fills; option_fees validated vs real contract note (₹221.32 vs ₹222.01).
+- [x] Risk + independent stop — SL/TP/trail, MAX_TRADES, DAY_MAX_LOSS/PROFIT, global+per-strategy KILL, EOD square-off; all gate-blocking paths tested (tests/test_paper_exec.py).
+- [x] Taxes — india_trader/tax.py: F&O as non-speculative BUSINESS income at slab rate (marginal over other income), new-regime FY25-26 defaults flagged for CA verification, losses untaxed. tests/test_phase4_tax.py (hand-checked slab math).
+- Evidence: PR #92 (CHG-20261128-1440).
+
+## Phase 5 — CLOSED 2026-11-28 (deterministic strategies + replay parity)
+- [x] Determinism — all three live detectors (S2 supertrend_sma, S4 buffer_breakout, S5 sma_rsi) emit byte-identical events across runs; input never mutated.
+- [x] Replay parity / no lookahead — events over every growing prefix equal the full-series events within that prefix, so a signal attributed to a closed bar never changes when later bars arrive (lookahead would fail this).
+- Evidence: PR #93 (CHG-20261128-1455); tests/test_phase5_determinism_replay.py.
+
+## Remaining (honest)
+- Phases 6–8, 10: subsequent engineering milestones per #17.
+- **Phase 9 cannot be compressed:** it requires ≥10 real, consecutive, reconciled live-market paper sessions. First live validation is the two-job split on Monday 2026-11-30 (auto-starts 09:07 IST). Each real session accrues one toward the ten; this is wall-clock bound and no amount of agent parallelism shortens it.
