@@ -146,14 +146,8 @@
         <div class="card idxcard">
           <div class="idxL"><div class="tick t-sensex">SX</div>
             <div><div class="idxname">SENSEX <span class="badge flat">—</span></div>
-            <div class="idxsub">ORB</div></div></div>
+            <div class="idxsub">EMA 9/15 · qty 20</div></div></div>
           <div class="idxR"><div class="idxpx mono">—</div><div class="idxsub">awaiting session</div></div>
-        </div>
-        <div class="card idxcard">
-          <div class="idxL"><div class="tick t-bank">BN</div>
-            <div><div class="idxname">BANKNIFTY <span class="badge flat">—</span></div>
-            <div class="idxsub">disabled</div></div></div>
-          <div class="idxR"><div class="idxpx mono">—</div><div class="idxsub">—</div></div>
         </div>
       </div>
 
@@ -210,14 +204,6 @@
 // P&L / trades come only from the live feed; zero until a real session runs.
 const ROSTER = [
   {name:"EMA 9/15", tag:["ENABLED","p-on"], verdict:["EDGE","p-win"]},
-  {name:"3-Candle", tag:["SIDECAR","p-off"], verdict:["RESEARCH","p-off"]},
-  {name:"ORB (S1)", tag:["OFF","p-off"], verdict:["LOSES","p-lose"]},
-  {name:"Supertrend + SMA (S2)", tag:["OFF","p-off"], verdict:["LOSES","p-lose"]},
-  {name:"UT Bot + MACD (S3)", tag:["OFF","p-off"], verdict:["NEW","p-off"]},
-  {name:"Buffer Breakout (S4)", tag:["SWITCHABLE","p-off"], verdict:["NIFTY-ONLY","p-win"]},
-  {name:"SMA + RSI (S5)", tag:["SWITCHABLE","p-off"], verdict:["MIXED","p-off"]},
-  {name:"RSI-MA scanner (S6)", tag:["DAILY","p-off"], verdict:["NEW","p-off"]},
-  {name:"Reversal (S7)", tag:["OFF","p-off"], verdict:["NEW","p-off"]},
 ];
 const stratPnl = ROSTER.map(s=>({...s, pnl:0, trades:0, wr:"—"}));
 const signals = [];
@@ -225,14 +211,6 @@ const orders = [];
 const history = [];
 const configs = [
   {name:"EMA 9/15", on:true, rows:[["Market","NIFTY + SENSEX"],["Qty","65 / 20"],["Trades / day","5"],["SL points","30"],["TP points","50"],["Trailing","on · 10 / 6"],["Day max loss","₹600"]]},
-  {name:"3-Candle", on:false, rows:[["Market","NIFTY"],["Type","research sidecar"],["Qty","65"],["SL points","30"],["TP points","50"]]},
-  {name:"ORB (S1)", on:false, rows:[["Market","SENSEX"],["Qty","20"],["Range","09:15–10:00"],["Trades / day","4"],["SL points","30"],["TP points","70"]]},
-  {name:"Supertrend + SMA (S2)", on:false, rows:[["Market","NIFTY"],["Qty","65"],["Trades / day","5"],["SL points","30"],["TP points","50"],["SMA / ST","20 / 10×3"]]},
-  {name:"UT Bot + MACD (S3)", on:false, rows:[["Market","BANKNIFTY"],["Qty","30"],["Trades / day","4"],["SL points","60"],["TP points","80"],["Params","UT 1×10 · MACD 12/26/9"]]},
-  {name:"Buffer Breakout (S4)", on:false, rows:[["Market","NIFTY"],["Qty","65"],["Trades / day","4"],["SL points","30"],["TP points","60"],["Buffer","0.1%"]]},
-  {name:"SMA + RSI (S5)", on:false, rows:[["Market","NIFTY / SENSEX"],["Qty","65 / 20"],["Trades / day","4"],["SL points","30"],["TP points","50"],["Params","SMA 20 · RSI 14 (55/45)"]]},
-  {name:"RSI-MA scanner (S6)", on:false, rows:[["Market","NIFTY 50 stocks"],["Type","daily scan · buy-only"],["Params","RSI 14 · MA 14 · >40"]]},
-  {name:"Reversal (S7)", on:false, rows:[["Market","NIFTY / SENSEX"],["Qty","65 / 20"],["Trades / day","3"],["Levels","prev-day H/L/C + ORB"],["TP","next level / RR 1:2"]]},
 ];
 const money = n => (n>0?"+":n<0?"−":"")+"₹"+Math.abs(n).toLocaleString("en-IN");
 const cls = n => n>0?"pos":n<0?"neg":"";
@@ -327,10 +305,12 @@ function applyLive(d){
     document.getElementById("dWin").textContent=d.day.win_rate||"—";
   }
   if(Array.isArray(d.strategies)){
-    // When the feed has traded strategies, show those; otherwise keep the full
-    // roster with real zeros (never fabricated numbers).
-    const rows = d.strategies.length
-      ? d.strategies.map(s=>({name:s.name, pnl:s.pnl, trades:s.trades, wr:s.win, verdict:VERDICT[s.name]||["",""], tag:null}))
+    // Owner: EMA 9/15 only. Show only EMA 9/15 from the feed; otherwise the
+    // roster (EMA 9/15) with real zeros. Never fabricated numbers.
+    const isEma = n => String(n).toUpperCase().includes("EMA");
+    const ema = d.strategies.filter(s=>isEma(s.name));
+    const rows = ema.length
+      ? ema.map(s=>({name:"EMA 9/15", pnl:s.pnl, trades:s.trades, wr:s.win, verdict:["EDGE","p-win"], tag:["ENABLED","p-on"]}))
       : stratPnl;
     document.getElementById("stratPnl").innerHTML = rows.map(s=>{
       const v=s.verdict||["",""];
